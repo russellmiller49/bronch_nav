@@ -1,0 +1,162 @@
+{
+  "coordinate_system_exported": "RAS",
+  "input_model_coordinate_system": "LPS converted to RAS",
+  "node_count": 417,
+  "edge_count": 418,
+  "sampled_polyline_point_count": 9947,
+  "degree_distribution": {
+    "1": 209,
+    "3": 205,
+    "4": 3
+  },
+  "terminal_node_count": 209,
+  "bifurcation_node_count_degree_ge_3": 208,
+  "root_node_id": 385,
+  "root_ras": [
+    5.996,
+    178.9888,
+    -56.7153
+  ],
+  "carina_node_id": 0,
+  "carina_ras": [
+    11.8954,
+    155.7244,
+    -172.2558
+  ],
+  "edge_length_mm": {
+    "min": 1.0232,
+    "median": 10.4313,
+    "max": 127.993,
+    "total": 5376.7122
+  },
+  "point_radius_mm": {
+    "min": 0.0,
+    "median": 0.7082,
+    "max": 8.7605
+  },
+  "ras_bounds": {
+    "min": [
+      -122.4079,
+      99.0804,
+      -328.1509
+    ],
+    "max": [
+      124.3366,
+      257.5693,
+      -56.7153
+    ]
+  },
+  "graph_note": "Use Dijkstra/root distances rather than assuming a perfect binary tree; this network has degree-4 bifurcations and a small cycle rank.",
+  "centerline_model_summary": {
+    "path": "/mnt/data/Centerline model.vtk",
+    "input_coordinate_system": "LPS",
+    "point_count": 40983,
+    "line_count": 212,
+    "line_point_count": {
+      "min": 2,
+      "max": 517
+    },
+    "unique_start_points_rounded_0p001mm": 99,
+    "unique_end_points_rounded_0p001mm": 211,
+    "most_common_start_points": [
+      {
+        "ras": [
+          6.268,
+          178.461,
+          -58.667
+        ],
+        "count": 113
+      },
+      {
+        "ras": [
+          63.847,
+          108.227,
+          -327.594
+        ],
+        "count": 2
+      },
+      {
+        "ras": [
+          -33.952,
+          143.428,
+          -252.175
+        ],
+        "count": 1
+      },
+      {
+        "ras": [
+          -34.511,
+          144.0,
+          -290.074
+        ],
+        "count": 1
+      },
+      {
+        "ras": [
+          -61.405,
+          105.205,
+          -251.874
+        ],
+        "count": 1
+      },
+      {
+        "ras": [
+          -72.401,
+          131.104,
+          -241.356
+        ],
+        "count": 1
+      },
+      {
+        "ras": [
+          -121.214,
+          183.464,
+          -264.502
+        ],
+        "count": 1
+      },
+      {
+        "ras": [
+          -81.806,
+          123.831,
+          -259.939
+        ],
+        "count": 1
+      },
+      {
+        "ras": [
+          -93.121,
+          143.71,
+          -244.34
+        ],
+        "count": 1
+      },
+      {
+        "ras": [
+          -77.834,
+          150.476,
+          -224.376
+        ],
+        "count": 1
+      }
+    ],
+    "line_length_mm": {
+      "min": 0.0,
+      "median": 187.1644,
+      "max": 292.9889
+    },
+    "point_data_arrays": {
+      "Radius": [
+        40983
+      ],
+      "EdgeArray": [
+        40983,
+        2
+      ],
+      "EdgePCoordArray": [
+        40983
+      ]
+    },
+    "note": "This model appears to contain multiple root-to-terminal centerline paths. The Network model is cleaner for branch graph/routing; this Centerline model can still be useful for comparing complete terminal paths."
+  }
+}

@@ -1,0 +1,37 @@
+# Example end-to-end config for the bronchoedu prototype.
+# Update paths before running.
+
+source:
+  ct: data/source/CT.nrrd
+  mask: data/source/lung_nodule_1_mask.nrrd
+  labels_csv: data/source/Nodule_segmentation_patient 1.labels.csv
+  label_name: lung_nodule_1
+  label_value: 1
+  binary_mask_out: outputs/source/lung_nodule_1_mask.nrrd
+
+target:
+  ct: data/target/target_clean_ct.nrrd
+  # Slicer RAS coordinate chosen by faculty in clean target CT.
+  insertion_ras: [42.0, 130.0, -250.0]
+
+airway:
+  network_vtk: data/airway/Network model.vtk
+  centerline_vtk: data/airway/Centerline model.vtk
+
+nodule_asset:
+  out_dir: outputs/assets/lung_nodule_1
+  margin_mm: 12
+  feather_mm: 2
+
+insertion:
+  mode: residual
+  scale: 1.0
+  rotation_degrees: [0, 0, 0]
+  out_ct: outputs/synthetic/synthetic_ct.nrrd
+  out_mask: outputs/synthetic/synthetic_nodule_mask.nrrd
+  out_placement: outputs/synthetic/synthetic_placement.json
+  cast_int16: true
+
+route:
+  out_json: outputs/routes/route_to_synthetic_nodule.json
+  include_frames: true

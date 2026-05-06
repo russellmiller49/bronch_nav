@@ -1,0 +1,9 @@
+columnName	type	componentNames
+CellId	int	
+Length	double	
+Radius	double	
+Curvature	double	
+Torsion	double	
+Tortuosity	double	
+StartPointPosition	double	R|A|S
+EndPointPosition	double	R|A|S

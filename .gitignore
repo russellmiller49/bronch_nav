@@ -1,0 +1,10 @@
+.venv/
+outputs/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.DS_Store
+web/node_modules/
+web/dist/
+web/public/cases/*/*.raw

@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bronchoedu"
+version = "0.1.0"
+description = "Educational synthetic nodule insertion and bronchoscopy branch tracing prototype"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.24",
+  "scipy>=1.10",
+  "SimpleITK>=2.3",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[project.scripts]
+bronchoedu-validate-exports = "bronchoedu.scripts.validate_slicer_exports:main"
+bronchoedu-split-labelmap = "bronchoedu.scripts.split_multilabel_nodule_mask:main"
+bronchoedu-create-asset = "bronchoedu.scripts.create_nodule_asset:main"
+bronchoedu-insert-nodule = "bronchoedu.scripts.insert_nodule_asset:main"
+bronchoedu-route-from-mask = "bronchoedu.scripts.route_from_mask_centroid:main"
+bronchoedu-run-demo = "bronchoedu.scripts.run_end_to_end_demo:main"
+bronchoedu-prepare-web-case = "bronchoedu.scripts.prepare_web_case:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
