@@ -46,6 +46,7 @@ export interface ScopeCalibrationPayload {
   schema: string;
   caseId?: string;
   exportedAt?: string;
+  updatedAt?: string;
   adjustments: Record<string, Partial<ScopeAdjustment>>;
 }
 
@@ -132,6 +133,7 @@ export interface WebCase {
     sourceCt: string;
   };
   noduleAsset?: NoduleAssetMetadata;
+  scopeCalibrationJson?: string;
   scopeCalibration?: ScopeCalibrationPayload;
 }
 
@@ -146,6 +148,7 @@ export interface BranchOption {
   edgeId: number;
   toNodeId: number;
   isCorrect: boolean;
+  pathEdgeIds?: number[];
 }
 
 export interface Decision {
@@ -161,5 +164,8 @@ export interface RouteState {
   nodePath: number[];
   edgePath: number[];
   routePoints: Vec3[];
+  routeDistancesMm: number[];
+  nodeDistancesMm: Record<number, number>;
+  totalLengthMm: number;
   decisions: Decision[];
 }

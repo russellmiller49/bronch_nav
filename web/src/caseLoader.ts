@@ -11,6 +11,10 @@ export async function loadCase(caseUrl = "/cases/default/case.json"): Promise<Lo
   if (candidatePayload) {
     mergeCandidateLabels(metadata, candidatePayload);
   }
+  const scopeCalibrationPayload = await fetchScopeCalibrationSidecar(metadata, caseUrl);
+  if (scopeCalibrationPayload) {
+    metadata.scopeCalibration = scopeCalibrationPayload;
+  }
 
   const rawUrl = new URL(metadata.ct.raw, new URL(caseUrl, window.location.origin)).toString();
   const buffer = await fetch(rawUrl).then((response) => {
@@ -29,6 +33,24 @@ export async function loadCase(caseUrl = "/cases/default/case.json"): Promise<Lo
     : null;
 
   return { metadata, volume: new Uint8Array(buffer), noduleAsset };
+}
+
+async function fetchScopeCalibrationSidecar(metadata: WebCase, caseUrl: string) {
+  const sidecarPath = metadata.scopeCalibrationJson ?? "scope_calibration.json";
+  const url = new URL(sidecarPath, new URL(caseUrl, window.location.origin)).toString();
+  return fetch(url).then(async (response) => {
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to load scope calibration: ${response.status}`);
+    }
+    const payload = await response.json();
+    if (!payload || payload.schema !== "bronchoedu_scope_calibration/v1" || typeof payload.adjustments !== "object") {
+      throw new Error("Scope calibration JSON has an unsupported schema.");
+    }
+    return payload;
+  });
 }
 
 async function fetchCandidateSidecar(metadata: WebCase, caseUrl: string): Promise<AirwayCandidatePayload | null> {

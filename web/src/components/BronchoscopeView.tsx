@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import type { Decision, ScopeAdjustment, Vec3 } from "../types";
 import { add, normalize, rasToScene, scale, subtract } from "../geometry";
-import { childNodeForEdge, type CaseIndexes, orientedEdgePoints } from "../route";
+import { type CaseIndexes, optionPathPoints } from "../route";
 
 interface ScopeLabel {
   label: string;
@@ -13,10 +13,19 @@ interface ScopeLabel {
   visible: boolean;
 }
 
+export interface ScopeCameraPose {
+  cameraRas: Vec3;
+  targetRas: Vec3;
+}
+
 interface BronchoscopeViewProps {
   decision: Decision | null;
   indexes: CaseIndexes;
   selectedEdgeId: number | null;
+  drivePose?: ScopeCameraPose | null;
+  applyDriveAdjustment?: boolean;
+  showDecisionLabels?: boolean;
+  statusLabel?: string;
   debugMode?: boolean;
   adjustment?: ScopeAdjustment;
   onAdjustmentChange?: (adjustment: ScopeAdjustment) => void;
@@ -34,6 +43,9 @@ export const DEFAULT_SCOPE_ADJUSTMENT: ScopeAdjustment = {
 };
 
 const geometryCache = new Map<string, Promise<THREE.BufferGeometry>>();
+const BRANCH_BACK_MM = 18;
+const SHORT_SEGMENT_BACK_FRACTION = 0.7;
+const PARENT_CLEARANCE_MM = 3;
 
 export function normalizeScopeAdjustment(adjustment?: Partial<ScopeAdjustment>): ScopeAdjustment {
   return {
@@ -55,15 +67,48 @@ export function BronchoscopeView({
   decision,
   indexes,
   selectedEdgeId,
+  drivePose = null,
+  applyDriveAdjustment = false,
+  showDecisionLabels = true,
+  statusLabel,
   debugMode = false,
   adjustment: rawAdjustment,
   onAdjustmentChange,
   meshUrl = "/cases/default/airway_surface.stl"
 }: BronchoscopeViewProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const headlightRef = useRef<THREE.PointLight | null>(null);
+  const materialRef = useRef<THREE.ShaderMaterial | null>(null);
+  const labelsVisibleRef = useRef(false);
+  const renderRef = useRef<() => void>(() => {});
   const [labels, setLabels] = useState<ScopeLabel[]>([]);
   const [meshStatus, setMeshStatus] = useState<"loading" | "ready" | "error">("loading");
   const adjustment = normalizeScopeAdjustment(rawAdjustment);
+
+  renderRef.current = () => {
+    const mount = mountRef.current;
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    const headlight = headlightRef.current;
+    if (!mount || !renderer || !scene || !camera || !headlight) {
+      return;
+    }
+    positionCamera(camera, decision, indexes, adjustment, drivePose, applyDriveAdjustment);
+    camera.updateMatrixWorld(true);
+    headlight.position.copy(camera.position);
+    if (showDecisionLabels && decision) {
+      labelsVisibleRef.current = true;
+      updateLabels(camera, mount, decision, indexes, selectedEdgeId, adjustment, setLabels);
+    } else if (labelsVisibleRef.current) {
+      labelsVisibleRef.current = false;
+      setLabels([]);
+    }
+    renderer.render(scene, camera);
+  };
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -72,6 +117,7 @@ export function BronchoscopeView({
     }
     mount.innerHTML = "";
     setLabels([]);
+    labelsVisibleRef.current = false;
     setMeshStatus("loading");
 
     let cancelled = false;
@@ -89,7 +135,6 @@ export function BronchoscopeView({
 
     const camera = new THREE.PerspectiveCamera(84, mount.clientWidth / Math.max(mount.clientHeight, 1), 0.12, 900);
     camera.up.copy(toVector3([0, 1, 0]).normalize());
-    positionCamera(camera, decision, indexes, adjustment);
 
     const headlight = new THREE.PointLight(0xffd1ad, 18, 180, 1.1);
     headlight.position.copy(camera.position);
@@ -97,11 +142,11 @@ export function BronchoscopeView({
     scene.add(new THREE.AmbientLight(0xffb08a, 0.65));
 
     const material = createBronchoscopyMaterial();
-
-    const render = () => {
-      updateLabels(camera, mount, decision, indexes, selectedEdgeId, adjustment, setLabels);
-      renderer.render(scene, camera);
-    };
+    rendererRef.current = renderer;
+    sceneRef.current = scene;
+    cameraRef.current = camera;
+    headlightRef.current = headlight;
+    materialRef.current = material;
 
     loadAirwayGeometry(meshUrl)
       .then((geometry) => {
@@ -111,12 +156,12 @@ export function BronchoscopeView({
         setMeshStatus("ready");
         const mesh = new THREE.Mesh(geometry, material);
         scene.add(mesh);
-        render();
+        renderRef.current();
       })
       .catch(() => {
         if (!cancelled) {
           setMeshStatus("error");
-          render();
+          renderRef.current();
         }
       });
 
@@ -124,20 +169,48 @@ export function BronchoscopeView({
       renderer.setSize(mount.clientWidth, mount.clientHeight);
       camera.aspect = mount.clientWidth / Math.max(mount.clientHeight, 1);
       camera.updateProjectionMatrix();
-      render();
+      renderRef.current();
     };
     window.addEventListener("resize", onResize);
-    render();
+    renderRef.current();
 
     return () => {
       cancelled = true;
       window.removeEventListener("resize", onResize);
-      material.dispose();
+      materialRef.current?.dispose();
       renderer.dispose();
       renderer.forceContextLoss();
+      rendererRef.current = null;
+      sceneRef.current = null;
+      cameraRef.current = null;
+      headlightRef.current = null;
+      materialRef.current = null;
       mount.innerHTML = "";
     };
-  }, [decision, indexes, meshUrl, selectedEdgeId, adjustment.cameraBackMm, adjustment.lookAheadMm, adjustment.yawDeg, adjustment.pitchDeg, adjustment.rollDeg, adjustment.fovDeg, adjustment.labelOffsets]);
+  }, [meshUrl]);
+
+  useEffect(() => {
+    renderRef.current();
+  }, [
+    decision,
+    indexes,
+    selectedEdgeId,
+    showDecisionLabels,
+    adjustment.cameraBackMm,
+    adjustment.lookAheadMm,
+    adjustment.yawDeg,
+    adjustment.pitchDeg,
+    adjustment.rollDeg,
+    adjustment.fovDeg,
+    adjustment.labelOffsets,
+    applyDriveAdjustment,
+    drivePose?.cameraRas[0],
+    drivePose?.cameraRas[1],
+    drivePose?.cameraRas[2],
+    drivePose?.targetRas[0],
+    drivePose?.targetRas[1],
+    drivePose?.targetRas[2]
+  ]);
 
   const beginLabelDrag = (item: ScopeLabel, event: PointerEvent<HTMLSpanElement>) => {
     if (!debugMode || !onAdjustmentChange) {
@@ -173,7 +246,7 @@ export function BronchoscopeView({
     <section className="scope-panel">
       <div className="pane-chrome">
         <span>Virtual bronchoscope</span>
-        <span>{decision ? `Decision ${decision.index + 1}` : "Complete"}</span>
+        <span>{statusLabel ?? (decision ? `Decision ${decision.index + 1}` : "Complete")}</span>
       </div>
       <div className="scope-mask scope-mask-real">
         <div ref={mountRef} className="scope-render" />
@@ -285,9 +358,22 @@ function createBronchoscopyMaterial(): THREE.ShaderMaterial {
   });
 }
 
-function positionCamera(camera: THREE.PerspectiveCamera, decision: Decision | null, indexes: CaseIndexes, adjustment: ScopeAdjustment) {
-  camera.fov = adjustment.fovDeg;
+function positionCamera(
+  camera: THREE.PerspectiveCamera,
+  decision: Decision | null,
+  indexes: CaseIndexes,
+  adjustment: ScopeAdjustment,
+  drivePose: ScopeCameraPose | null,
+  applyDriveAdjustment: boolean
+) {
+  const useDrivePose = Boolean(drivePose && !(applyDriveAdjustment && decision));
+  const cameraAdjustment = useDrivePose ? DEFAULT_SCOPE_ADJUSTMENT : adjustment;
+  camera.fov = cameraAdjustment.fovDeg;
   camera.updateProjectionMatrix();
+  if (useDrivePose && drivePose) {
+    aimCamera(camera, toVector3(drivePose.cameraRas), toVector3(drivePose.targetRas), cameraAdjustment);
+    return;
+  }
   if (!decision) {
     camera.position.set(0, 0, 240);
     camera.lookAt(0, 0, 0);
@@ -301,12 +387,19 @@ function positionCamera(camera: THREE.PerspectiveCamera, decision: Decision | nu
   }
 
   const incoming = incomingDirection(decision.nodeId, indexes);
-  const cameraRas = add(node.ras, scale(incoming, -adjustment.cameraBackMm));
+  const cameraBackMm = safeIncomingBackDistance(adjustment.cameraBackMm, availableIncomingDistance(node, indexes));
+  const cameraRas = add(node.ras, scale(incoming, -cameraBackMm));
   const targetRas = add(node.ras, scale(averageOptionDirection(decision, indexes, incoming), adjustment.lookAheadMm));
-  const cameraPosition = toVector3(cameraRas);
-  const targetPosition = toVector3(targetRas);
+  aimCamera(camera, toVector3(cameraRas), toVector3(targetRas), cameraAdjustment);
+}
+
+function aimCamera(camera: THREE.PerspectiveCamera, cameraPosition: THREE.Vector3, targetPosition: THREE.Vector3, adjustment: ScopeAdjustment) {
   const upHint = toVector3([0, 1, 0]).normalize();
-  const forward = targetPosition.clone().sub(cameraPosition).normalize();
+  const forward = targetPosition.clone().sub(cameraPosition);
+  if (forward.lengthSq() < 1e-6) {
+    forward.set(0, 0, -1);
+  }
+  forward.normalize();
   let right = new THREE.Vector3().crossVectors(forward, upHint).normalize();
   if (right.lengthSq() < 1e-6) {
     right = new THREE.Vector3(1, 0, 0);
@@ -345,9 +438,7 @@ function updateLabels(
   const width = mount.clientWidth;
   const height = mount.clientHeight;
   const labels = decision.options.map((option) => {
-    const edge = indexes.edgesById.get(option.edgeId);
-    const child = edge ? childNodeForEdge(edge, node.id, indexes) : option.toNodeId;
-    const points = edge ? orientedEdgePoints(edge, node.id, child) : [node.ras];
+    const points = optionPathPoints(decision, option, indexes);
     const labelRas = pointAlong(points, 16);
     const projected = toVector3(labelRas).project(camera);
     const offset = adjustment.labelOffsets[option.label] ?? { x: 0, y: 0 };
@@ -376,6 +467,19 @@ function incomingDirection(nodeId: number, indexes: CaseIndexes): Vec3 {
   return node && parent ? normalize(subtract(node.ras, parent.ras), [0, 0, -1]) : [0, 0, -1];
 }
 
+function availableIncomingDistance(node: { rootDistanceMm: number; parentNodeId: number | null }, indexes: CaseIndexes): number {
+  const parent = node.parentNodeId == null ? null : indexes.nodesById.get(node.parentNodeId);
+  return parent ? Math.max(0, node.rootDistanceMm - parent.rootDistanceMm) : BRANCH_BACK_MM;
+}
+
+function safeIncomingBackDistance(requestedBackMm: number, availableIncomingMm: number): number {
+  if (!Number.isFinite(availableIncomingMm) || availableIncomingMm <= 0) {
+    return requestedBackMm;
+  }
+  const shortSegmentBackMm = Math.max(availableIncomingMm * SHORT_SEGMENT_BACK_FRACTION, availableIncomingMm - PARENT_CLEARANCE_MM);
+  return Math.max(0, Math.min(requestedBackMm, BRANCH_BACK_MM, shortSegmentBackMm));
+}
+
 function averageOptionDirection(decision: Decision, indexes: CaseIndexes, fallback: Vec3): Vec3 {
   const node = indexes.nodesById.get(decision.nodeId);
   if (!node) {
@@ -383,12 +487,7 @@ function averageOptionDirection(decision: Decision, indexes: CaseIndexes, fallba
   }
   const out: Vec3 = [0, 0, 0];
   decision.options.forEach((option) => {
-    const edge = indexes.edgesById.get(option.edgeId);
-    if (!edge) {
-      return;
-    }
-    const child = childNodeForEdge(edge, node.id, indexes);
-    const points = orientedEdgePoints(edge, node.id, child);
+    const points = optionPathPoints(decision, option, indexes);
     const direction = normalize(subtract(points[Math.min(1, points.length - 1)] ?? node.ras, points[0] ?? node.ras), fallback);
     out[0] += direction[0];
     out[1] += direction[1];

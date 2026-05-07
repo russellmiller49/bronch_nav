@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import type { Decision, RouteState, Vec3, WebCase } from "../types";
 import { rasToScene } from "../geometry";
-import { childNodeForEdge, type CaseIndexes, orientedEdgePoints } from "../route";
+import { childNodeForEdge, type CaseIndexes, optionPathPoints, orientedEdgePoints } from "../route";
 import type { CandidateOverlay } from "./CtPane";
 
 interface MapLabel {
@@ -22,6 +22,7 @@ interface AirwayMapProps {
   candidateOverlays: CandidateOverlay[];
   selectedEndpointId: number;
   selectedEdgeId: number | null;
+  driveRas?: Vec3 | null;
   onEndpointChange: (nodeId: number) => void;
   meshUrl?: string;
 }
@@ -36,6 +37,7 @@ export function AirwayMap({
   candidateOverlays,
   selectedEndpointId,
   selectedEdgeId,
+  driveRas = null,
   onEndpointChange,
   meshUrl = "/cases/default/airway_surface.stl"
 }: AirwayMapProps) {
@@ -73,6 +75,8 @@ export function AirwayMap({
     if (decision) {
       addDecisionLines(scene, indexes, decision, selectedEdgeId);
       addCurrentMarker(scene, decision.nodeRas);
+    } else if (driveRas) {
+      addCurrentMarker(scene, driveRas);
     }
     addEndpointDots(scene, webCase, 0.78);
     addNodule(scene, indexes.nodesById.get(selectedEndpointId)?.ras ?? webCase.initial.snappedTerminalRas);
@@ -124,9 +128,7 @@ export function AirwayMap({
       }
       const decisionScreen = projectToScreen(decision.nodeRas, camera, mount);
       const next: MapLabel[] = decision.options.map((option, index) => {
-        const edge = indexes.edgesById.get(option.edgeId);
-        const node = indexes.nodesById.get(decision.nodeId);
-        const labelPoint = edge && node ? pointAlong(orientedEdgePoints(edge, node.id, childNodeForEdge(edge, node.id, indexes)), 28) : decision.nodeRas;
+        const labelPoint = pointAlong(optionPathPoints(decision, option, indexes), 28);
         const branchScreen = projectToScreen(labelPoint, camera, mount);
         const labelScreen = labelNearDecision(decisionScreen, branchScreen, index, decision.options.length, mount);
         const isSelected = selectedEdgeId === option.edgeId;
@@ -223,7 +225,7 @@ export function AirwayMap({
       renderer.forceContextLoss();
       mount.innerHTML = "";
     };
-  }, [webCase, indexes, route, decision, candidateOverlays, selectedEndpointId, selectedEdgeId, meshUrl]);
+  }, [webCase, indexes, route, decision, candidateOverlays, selectedEndpointId, selectedEdgeId, driveRas, meshUrl]);
 
   return (
     <section className="map-panel">
@@ -344,14 +346,23 @@ function addRouteTube(scene: THREE.Scene, pointsRas: Vec3[], color: number, radi
 
 function addDecisionLines(scene: THREE.Scene, indexes: CaseIndexes, decision: Decision, selectedEdgeId: number | null) {
   decision.options.forEach((option) => {
-    const edge = indexes.edgesById.get(option.edgeId);
-    const node = indexes.nodesById.get(decision.nodeId);
-    if (!edge || !node) {
+    const points = optionPathPoints(decision, option, indexes);
+    if (points.length < 2) {
       return;
     }
     const color = selectedEdgeId === option.edgeId ? (option.isCorrect ? 0x29f07f : 0xff5964) : option.isCorrect && selectedEdgeId != null ? 0xffd43a : 0xf2c94c;
-    addRouteLines(scene, indexes, [edge.id], [node.id, childNodeForEdge(edge, node.id, indexes)], color, 1);
+    addPointLine(scene, points, color, 1);
   });
+}
+
+function addPointLine(scene: THREE.Scene, pointsRas: Vec3[], color: number, opacity: number) {
+  const positions: number[] = [];
+  for (let i = 1; i < pointsRas.length; i += 1) {
+    positions.push(...rasToScene(pointsRas[i - 1]), ...rasToScene(pointsRas[i]));
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  scene.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity })));
 }
 
 function addEndpointDots(scene: THREE.Scene, webCase: WebCase, opacity = 0.78) {

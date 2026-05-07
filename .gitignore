@@ -8,3 +8,5 @@ __pycache__/
 web/node_modules/
 web/dist/
 web/public/cases/*/*.raw
+external_repos/
+annotations/

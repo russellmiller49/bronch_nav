@@ -1,0 +1,75 @@
+{
+  "schema": "bronchoedu_scope_calibration/v1",
+  "caseId": "synthetic-target",
+  "adjustments": {
+    "4": {
+      "cameraBackMm": 15,
+      "lookAheadMm": 8,
+      "yawDeg": 3,
+      "pitchDeg": 10,
+      "rollDeg": -31,
+      "fovDeg": 84,
+      "labelOffsets": {
+        "A": {
+          "x": -33,
+          "y": 61
+        },
+        "B": {
+          "x": -55,
+          "y": -20
+        }
+      }
+    },
+    "23": {
+      "cameraBackMm": 6,
+      "lookAheadMm": 35,
+      "yawDeg": -7,
+      "pitchDeg": 8,
+      "rollDeg": -15,
+      "fovDeg": 84,
+      "labelOffsets": {
+        "B": {
+          "x": -14,
+          "y": -6
+        },
+        "A": {
+          "x": -1,
+          "y": 50
+        }
+      }
+    },
+    "47": {
+      "cameraBackMm": 8,
+      "lookAheadMm": 30,
+      "yawDeg": 4,
+      "pitchDeg": 0,
+      "rollDeg": 0,
+      "fovDeg": 84,
+      "labelOffsets": {}
+    },
+    "91": {
+      "cameraBackMm": 29,
+      "lookAheadMm": 36,
+      "yawDeg": -10,
+      "pitchDeg": 0,
+      "rollDeg": 0,
+      "fovDeg": 84,
+      "labelOffsets": {
+        "A": {
+          "x": -3,
+          "y": 45
+        }
+      }
+    },
+    "156": {
+      "cameraBackMm": 4,
+      "lookAheadMm": 30,
+      "yawDeg": -17,
+      "pitchDeg": 0,
+      "rollDeg": 0,
+      "fovDeg": 84,
+      "labelOffsets": {}
+    }
+  },
+  "updatedAt": "2026-05-07T14:13:53.184Z"
+}

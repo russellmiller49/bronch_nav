@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type {
   AirwayAnatomyLabel,
   AirwayCandidateLabel,
@@ -8,20 +8,25 @@ import type {
   RouteState,
   ScopeAdjustment,
   ScopeAdjustments,
-  ScopeCalibrationPayload
+  Vec3
 } from "./types";
 import { loadCase } from "./caseLoader";
 import { clamp, type CtViewMode, type PlaneKind } from "./geometry";
 import { buildRoute, createIndexes } from "./route";
 import { buildAirwayFrame, CtPane, type CandidateOverlay } from "./components/CtPane";
-import { BronchoscopeView, DEFAULT_SCOPE_ADJUSTMENT, normalizeScopeAdjustment } from "./components/BronchoscopeView";
+import { BronchoscopeView, DEFAULT_SCOPE_ADJUSTMENT, normalizeScopeAdjustment, type ScopeCameraPose } from "./components/BronchoscopeView";
 import { AirwayMap } from "./components/AirwayMap";
 
 type SliceOffsets = Record<PlaneKind, number>;
 
 const ZERO_SLICE_OFFSETS: SliceOffsets = { axial: 0, coronal: 0, sagittal: 0 };
-const SCOPE_DEBUG_STORAGE_KEY = "bronchoedu.scopeDebugAdjustments.v1";
 const SCOPE_CALIBRATION_SCHEMA = "bronchoedu_scope_calibration/v1";
+const SCOPE_CALIBRATION_SOURCE_PATH = "scope_calibration.json";
+const DRIVE_BRANCH_BACK_MM = 18;
+const DRIVE_LOOK_AHEAD_MM = 34;
+const DRIVE_SHORT_SEGMENT_BACK_FRACTION = 0.7;
+const DRIVE_PARENT_CLEARANCE_MM = 3;
+const DEFAULT_DRIVE_SPEED_MM_PER_SEC = 22;
 
 export function App() {
   const [loadedCase, setLoadedCase] = useState<LoadedCase | null>(null);
@@ -35,20 +40,20 @@ export function App() {
   const [sliceOffsets, setSliceOffsets] = useState<SliceOffsets>(ZERO_SLICE_OFFSETS);
   const [ctZoom, setCtZoom] = useState(1);
   const [scopeDebugMode, setScopeDebugMode] = useState(false);
-  const [scopeAdjustments, setScopeAdjustments] = useState<ScopeAdjustments>(() => loadScopeAdjustments());
+  const [scopeAdjustments, setScopeAdjustments] = useState<ScopeAdjustments>({});
   const [calibrationStatus, setCalibrationStatus] = useState("");
   const [mode, setMode] = useState<"setup" | "practice">("practice");
-  const calibrationInputRef = useRef<HTMLInputElement | null>(null);
+  const [driveDistanceMm, setDriveDistanceMm] = useState(0);
+  const [driveRunning, setDriveRunning] = useState(false);
+  const [driveSpeedMmPerSec, setDriveSpeedMmPerSec] = useState(DEFAULT_DRIVE_SPEED_MM_PER_SEC);
+  const sourceSaveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     loadCase()
       .then((nextCase) => {
         setLoadedCase(nextCase);
         setSelectedEndpointId(nextCase.metadata.initial.snappedTerminalNodeId);
-        setScopeAdjustments((localAdjustments) => ({
-          ...parseScopeCalibration(nextCase.metadata.scopeCalibration),
-          ...localAdjustments
-        }));
+        setScopeAdjustments(parseScopeCalibration(nextCase.metadata.scopeCalibration));
       })
       .catch((loadError: unknown) => setError(loadError instanceof Error ? loadError.message : String(loadError)));
   }, []);
@@ -62,22 +67,36 @@ export function App() {
   }, [selectedEndpointId, indexes]);
 
   const currentDecision: Decision | null = route?.decisions[currentDecisionIndex] ?? null;
+  const currentStopDistanceMm = route ? stopDistanceForDecision(route, currentDecision) : 0;
+  const atDecisionStop = Boolean(currentDecision && !driveRunning && driveDistanceMm >= currentStopDistanceMm - 0.75);
+  const visibleDecision: Decision | null = atDecisionStop ? currentDecision : null;
+  const driveRouteComplete = Boolean(route && !currentDecision && !driveRunning && driveDistanceMm >= route.totalLengthMm - 0.75);
+  const drivePose = useMemo<ScopeCameraPose | null>(() => {
+    if (!route) {
+      return null;
+    }
+    return buildDrivePose(route, driveDistanceMm, currentDecision);
+  }, [route, driveDistanceMm, currentDecision]);
+  const driveMapBucket = Math.round(driveDistanceMm / 6);
+  const mapDriveRas = useMemo<Vec3 | null>(() => (route ? pointAtRouteDistance(route, driveMapBucket * 6) : null), [route, driveMapBucket]);
   const selectedNode = loadedCase && selectedEndpointId ? loadedCase.metadata.airway.nodes.find((node) => node.id === selectedEndpointId) : null;
   const selectedEndpointAnatomy = anatomyDisplayName(selectedNode?.anatomy);
   const noduleRas = selectedNode?.ras ?? loadedCase?.metadata.initial.snappedTerminalRas;
-  const focusRas = currentDecision?.nodeRas ?? noduleRas ?? loadedCase?.metadata.initial.targetRas;
-  const selectedOption = currentDecision?.options.find((option) => option.edgeId === selectedEdgeId) ?? null;
-  const correctOption = currentDecision?.options.find((option) => option.isCorrect) ?? null;
+  const focusRas = drivePose?.cameraRas ?? visibleDecision?.nodeRas ?? noduleRas ?? loadedCase?.metadata.initial.targetRas;
+  const selectedOption = visibleDecision?.options.find((option) => option.edgeId === selectedEdgeId) ?? null;
+  const correctOption = visibleDecision?.options.find((option) => option.isCorrect) ?? null;
   const airwayFrame = useMemo(() => (route && focusRas ? buildAirwayFrame(route.routePoints, focusRas) : null), [route, focusRas]);
   const hasCandidateLabels = loadedCase?.metadata.airway.edges.some((edge) => edge.candidateLabels?.length) ?? false;
   const candidateOverlays = useMemo(
-    () => (showCandidateLabels && currentDecision ? buildCandidateOverlays(currentDecision, indexes?.edgesById ?? new Map()) : []),
-    [showCandidateLabels, currentDecision, indexes]
+    () => (showCandidateLabels && visibleDecision ? buildCandidateOverlays(visibleDecision, indexes?.edgesById ?? new Map()) : []),
+    [showCandidateLabels, visibleDecision, indexes]
   );
 
   useEffect(() => {
     setCurrentDecisionIndex(0);
     setSelectedEdgeId(null);
+    setDriveDistanceMm(0);
+    setDriveRunning(false);
     setSliceOffsets(ZERO_SLICE_OFFSETS);
   }, [selectedEndpointId]);
 
@@ -86,8 +105,48 @@ export function App() {
   }, [currentDecisionIndex, ctViewMode]);
 
   useEffect(() => {
-    window.localStorage.setItem(SCOPE_DEBUG_STORAGE_KEY, JSON.stringify(scopeAdjustments));
-  }, [scopeAdjustments]);
+    if (!route) {
+      return;
+    }
+    setDriveDistanceMm((current) => clamp(current, 0, route.totalLengthMm));
+  }, [route]);
+
+  useEffect(() => {
+    if (!driveRunning || !route) {
+      return;
+    }
+    let frameId = 0;
+    let lastTime = 0;
+    const tick = (time: number) => {
+      if (!lastTime) {
+        lastTime = time;
+      }
+      const elapsedSeconds = Math.min(0.08, (time - lastTime) / 1000);
+      lastTime = time;
+      let reachedStop = false;
+      setDriveDistanceMm((current) => {
+        const next = Math.min(currentStopDistanceMm, current + driveSpeedMmPerSec * elapsedSeconds);
+        reachedStop = next >= currentStopDistanceMm - 0.05;
+        return reachedStop ? currentStopDistanceMm : next;
+      });
+      if (reachedStop) {
+        setDriveRunning(false);
+        return;
+      }
+      frameId = window.requestAnimationFrame(tick);
+    };
+    frameId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [currentStopDistanceMm, driveRunning, driveSpeedMmPerSec, route]);
+
+  useEffect(
+    () => () => {
+      if (sourceSaveTimerRef.current != null) {
+        window.clearTimeout(sourceSaveTimerRef.current);
+      }
+    },
+    []
+  );
 
   if (error) {
     return (
@@ -105,24 +164,48 @@ export function App() {
     );
   }
 
-  const highlightEdges = buildHighlights(indexes.edgesById, selectedEdgeId, selectedOption?.isCorrect ?? false, correctOption?.edgeId ?? null);
+  const highlightEdges = buildHighlights(indexes.edgesById, visibleDecision, selectedEdgeId, selectedOption?.isCorrect ?? false, correctOption?.edgeId ?? null);
   const progressLabel = route.decisions.length ? `${Math.min(currentDecisionIndex + 1, route.decisions.length)} / ${route.decisions.length}` : "complete";
-  const scopeAdjustmentKey = currentDecision ? String(currentDecision.nodeId) : "complete";
-  const scopeAdjustment = currentDecision ? normalizeScopeAdjustment(scopeAdjustments[scopeAdjustmentKey]) : DEFAULT_SCOPE_ADJUSTMENT;
+  const scopeAdjustmentKey = visibleDecision ? String(visibleDecision.nodeId) : "drive";
+  const scopeAdjustment = visibleDecision ? normalizeScopeAdjustment(scopeAdjustments[scopeAdjustmentKey]) : DEFAULT_SCOPE_ADJUSTMENT;
+  const driveTargetDistanceMm = Math.max(currentStopDistanceMm, 0);
+  const driveProgressPercent = route.totalLengthMm > 0 ? Math.round((driveDistanceMm / route.totalLengthMm) * 100) : 0;
+  const scopeStatusLabel = visibleDecision ? `Decision ${visibleDecision.index + 1}` : driveRouteComplete ? "Complete" : driveRunning ? "Driving" : "Paused";
 
   const chooseOption = (edgeId: number) => {
+    setDriveRunning(false);
     setSelectedEdgeId(edgeId);
   };
 
-  const nextDecision = () => {
+  const continueDrive = () => {
     setSelectedEdgeId(null);
     setCurrentDecisionIndex((value) => Math.min(value + 1, route.decisions.length));
+    setDriveRunning(true);
   };
 
   const resetPractice = () => {
     setCurrentDecisionIndex(0);
     setSelectedEdgeId(null);
+    setDriveDistanceMm(0);
+    setDriveRunning(false);
     setSliceOffsets(ZERO_SLICE_OFFSETS);
+  };
+
+  const seekDrive = (distanceMm: number) => {
+    setDriveRunning(false);
+    setDriveDistanceMm(clamp(distanceMm, 0, driveTargetDistanceMm));
+  };
+
+  const nudgeDrive = (deltaMm: number) => {
+    setDriveRunning(false);
+    setDriveDistanceMm((current) => clamp(current + deltaMm, 0, driveTargetDistanceMm));
+  };
+
+  const toggleDrive = () => {
+    if (driveRouteComplete || atDecisionStop) {
+      return;
+    }
+    setDriveRunning((value) => !value);
   };
 
   const handleSliceScroll = (plane: PlaneKind, delta: number) => {
@@ -159,27 +242,31 @@ export function App() {
 
   const debugMoveDecision = (delta: number) => {
     setSelectedEdgeId(null);
+    setDriveRunning(false);
     setCurrentDecisionIndex((value) => {
       const maxDecision = Math.max(route.decisions.length - 1, 0);
-      return Math.round(clamp(value + delta, 0, maxDecision));
+      const nextIndex = Math.round(clamp(value + delta, 0, maxDecision));
+      setDriveDistanceMm(stopDistanceForDecision(route, route.decisions[nextIndex] ?? null));
+      return nextIndex;
     });
   };
 
   const updateCurrentScopeAdjustment = (updater: (current: ScopeAdjustment) => ScopeAdjustment) => {
-    if (!currentDecision) {
+    if (!visibleDecision) {
       return;
     }
+    const nextAdjustment = normalizeScopeAdjustment(updater(scopeAdjustment));
     setScopeAdjustments((current) => {
-      const existing = normalizeScopeAdjustment(current[scopeAdjustmentKey]);
       return {
         ...current,
-        [scopeAdjustmentKey]: normalizeScopeAdjustment(updater(existing))
+        [scopeAdjustmentKey]: nextAdjustment
       };
     });
+    queueScopeSourceSave(scopeAdjustmentKey, nextAdjustment);
   };
 
   const resetCurrentScopeAdjustment = () => {
-    if (!currentDecision) {
+    if (!visibleDecision) {
       return;
     }
     setScopeAdjustments((current) => {
@@ -187,50 +274,25 @@ export function App() {
       delete next[scopeAdjustmentKey];
       return next;
     });
+    queueScopeSourceSave(scopeAdjustmentKey, null);
   };
 
-  const exportScopeCalibration = () => {
-    const payload: ScopeCalibrationPayload = {
-      schema: SCOPE_CALIBRATION_SCHEMA,
-      caseId: loadedCase.metadata.caseId,
-      exportedAt: new Date().toISOString(),
-      adjustments: scopeAdjustments
-    };
-    const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${loadedCase.metadata.caseId || "broncho"}-scope-calibration.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    setCalibrationStatus(`Exported ${Object.keys(scopeAdjustments).length} views.`);
-  };
-
-  const importScopeCalibration = async (file: File | null | undefined) => {
-    if (!file) {
-      return;
+  const queueScopeSourceSave = (nodeKey: string, adjustment: ScopeAdjustment | null) => {
+    if (sourceSaveTimerRef.current != null) {
+      window.clearTimeout(sourceSaveTimerRef.current);
     }
-    try {
-      const parsed = JSON.parse(await file.text()) as unknown;
-      const imported = parseScopeCalibration(parsed);
-      const count = Object.keys(imported).length;
-      if (count === 0) {
-        throw new Error("No scope adjustments found in file.");
-      }
-      setScopeAdjustments((current) => ({ ...current, ...imported }));
-      setCalibrationStatus(`Imported ${count} views.`);
-    } catch (importError) {
-      setCalibrationStatus(importError instanceof Error ? importError.message : "Could not import calibration.");
-    } finally {
-      if (calibrationInputRef.current) {
-        calibrationInputRef.current.value = "";
-      }
-    }
-  };
-
-  const clearScopeCalibration = () => {
-    setScopeAdjustments({});
-    setCalibrationStatus("Cleared all local calibration.");
+    setCalibrationStatus(`${adjustment ? "Saving" : "Removing"} Node ${nodeKey}...`);
+    sourceSaveTimerRef.current = window.setTimeout(() => {
+      sourceSaveTimerRef.current = null;
+      void saveScopeAdjustmentToSource(loadedCase.metadata.caseId, nodeKey, adjustment)
+        .then(() => {
+          setCalibrationStatus(`${adjustment ? "Saved" : "Removed"} Node ${nodeKey} in ${SCOPE_CALIBRATION_SOURCE_PATH}.`);
+        })
+        .catch((saveError: unknown) => {
+          const message = saveError instanceof Error ? saveError.message : String(saveError);
+          setCalibrationStatus(`Local only: ${message}`);
+        });
+    }, 250);
   };
 
   return (
@@ -322,12 +384,53 @@ export function App() {
           </div>
         </div>
 
+        <div className="panel-section">
+          <span className="section-label">Drive</span>
+          <div className="decision-meta">
+            <span>{driveRunning ? "Moving" : driveRouteComplete ? "Complete" : atDecisionStop ? "At branch" : "Paused"}</span>
+            <span>{driveProgressPercent}%</span>
+          </div>
+          <div className="drive-controls">
+            <button className="icon-action" onClick={() => nudgeDrive(-8)} aria-label="Move scope backward">
+              {"<"}
+            </button>
+            <button className="secondary-action" onClick={toggleDrive} disabled={driveRouteComplete || atDecisionStop}>
+              {driveRunning ? "Pause" : "Drive"}
+            </button>
+            <button className="icon-action" onClick={() => nudgeDrive(8)} aria-label="Move scope forward" disabled={driveRouteComplete || atDecisionStop}>
+              {">"}
+            </button>
+          </div>
+          <label className="range-control drive-range">
+            <span>Position {Math.round(driveDistanceMm)} mm</span>
+            <input
+              type="range"
+              min="0"
+              max={Math.max(1, Math.round(driveTargetDistanceMm))}
+              step="1"
+              value={Math.round(clamp(driveDistanceMm, 0, Math.max(1, driveTargetDistanceMm)))}
+              onChange={(event) => seekDrive(Number(event.target.value))}
+            />
+          </label>
+          <label className="range-control drive-range">
+            <span>Speed {Math.round(driveSpeedMmPerSec)} mm/s</span>
+            <input
+              type="range"
+              min="8"
+              max="60"
+              step="1"
+              value={driveSpeedMmPerSec}
+              onChange={(event) => setDriveSpeedMmPerSec(Number(event.target.value))}
+            />
+          </label>
+        </div>
+
         {scopeDebugMode && (
           <div className="panel-section debug-section">
             <span className="section-label">Scope debug</span>
             <div className="decision-meta">
-              <span>{currentDecision ? `Node ${currentDecision.nodeId}` : "No active branch"}</span>
-              <span>local only</span>
+              <span>{visibleDecision ? `Node ${visibleDecision.nodeId}` : "No active branch"}</span>
+              <span>{SCOPE_CALIBRATION_SOURCE_PATH}</span>
             </div>
             <div className="inline-actions">
               <button className="secondary-action" onClick={() => debugMoveDecision(-1)}>
@@ -395,38 +498,20 @@ export function App() {
             <button className="secondary-action wide" onClick={resetCurrentScopeAdjustment}>
               Reset this scope view
             </button>
-            <div className="inline-actions calibration-actions">
-              <button className="secondary-action" onClick={exportScopeCalibration}>
-                Export JSON
-              </button>
-              <button className="secondary-action" onClick={() => calibrationInputRef.current?.click()}>
-                Import JSON
-              </button>
-            </div>
-            <button className="secondary-action wide" onClick={clearScopeCalibration}>
-              Clear all calibration
-            </button>
-            <input
-              ref={calibrationInputRef}
-              className="file-input"
-              type="file"
-              accept="application/json,.json"
-              onChange={(event) => void importScopeCalibration(event.target.files?.[0])}
-            />
             {calibrationStatus && <div className="debug-status">{calibrationStatus}</div>}
           </div>
         )}
 
         <div className="panel-section">
           <span className="section-label">Branch choice</span>
-          {currentDecision ? (
+          {visibleDecision ? (
             <>
               <div className="decision-meta">
-                <span>Node {currentDecision.nodeId}</span>
-                <span>{currentDecision.options.length} choices</span>
+                <span>Node {visibleDecision.nodeId}</span>
+                <span>{visibleDecision.options.length} choices</span>
               </div>
               <div className="choice-stack">
-                {currentDecision.options.map((option) => {
+                {visibleDecision.options.map((option) => {
                   const selected = selectedEdgeId === option.edgeId;
                   const stateClass = selected ? (option.isCorrect ? "choice-correct" : "choice-wrong") : "";
                   const edge = indexes.edgesById.get(option.edgeId);
@@ -440,15 +525,22 @@ export function App() {
                 })}
               </div>
               <Feedback selectedEdgeId={selectedEdgeId} selectedOptionCorrect={selectedOption?.isCorrect ?? null} />
-              <button className="primary-action" disabled={selectedEdgeId == null} onClick={nextDecision}>
-                Next branch
+              <button className="primary-action" disabled={selectedEdgeId == null} onClick={continueDrive}>
+                Drive on
+              </button>
+            </>
+          ) : driveRouteComplete ? (
+            <>
+              <RouteCompleteCelebration />
+              <button className="primary-action" onClick={resetPractice}>
+                Restart route
               </button>
             </>
           ) : (
             <>
-              <div className="done-state">Route complete</div>
-              <button className="primary-action" onClick={resetPractice}>
-                Restart route
+              <div className="done-state">{driveRunning ? "Driving" : "Paused"}</div>
+              <button className="primary-action" disabled={driveRunning || atDecisionStop} onClick={() => setDriveRunning(true)}>
+                Drive to branch
               </button>
             </>
           )}
@@ -525,9 +617,13 @@ export function App() {
         </div>
         <div className="right-stack">
           <BronchoscopeView
-            decision={currentDecision}
+            decision={visibleDecision}
             indexes={indexes}
             selectedEdgeId={selectedEdgeId}
+            drivePose={drivePose}
+            applyDriveAdjustment={scopeDebugMode && Boolean(visibleDecision)}
+            showDecisionLabels={Boolean(visibleDecision)}
+            statusLabel={scopeStatusLabel}
             debugMode={scopeDebugMode}
             adjustment={scopeAdjustment}
             onAdjustmentChange={(nextAdjustment) => updateCurrentScopeAdjustment(() => nextAdjustment)}
@@ -536,15 +632,31 @@ export function App() {
             webCase={loadedCase.metadata}
             indexes={indexes}
             route={route}
-            decision={currentDecision}
+            decision={visibleDecision}
             candidateOverlays={candidateOverlays}
             selectedEndpointId={selectedEndpointId ?? loadedCase.metadata.initial.snappedTerminalNodeId}
             selectedEdgeId={selectedEdgeId}
+            driveRas={mapDriveRas}
             onEndpointChange={setSelectedEndpointId}
           />
         </div>
       </section>
     </main>
+  );
+}
+
+function RouteCompleteCelebration() {
+  return (
+    <div className="done-state celebration-state" role="status" aria-live="polite">
+      <div className="celebration-mark" aria-hidden="true">
+        <span className="target-ring" />
+        {Array.from({ length: 14 }, (_, index) => (
+          <span key={index} className="confetti-piece" />
+        ))}
+      </div>
+      <strong>Lesion reached</strong>
+      <span>Route complete</span>
+    </div>
   );
 }
 
@@ -565,28 +677,17 @@ function DebugSlider({
   suffix: string;
   onChange: (value: number) => void;
 }) {
+  const handleInput = (event: FormEvent<HTMLInputElement>) => onChange(Number(event.currentTarget.value));
   return (
     <label className="debug-slider">
       <span>{label}</span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input type="range" min={min} max={max} step={step} value={value} onInput={handleInput} onChange={handleInput} />
       <strong>
         {value}
         {suffix}
       </strong>
     </label>
   );
-}
-
-function loadScopeAdjustments(): ScopeAdjustments {
-  try {
-    const raw = window.localStorage.getItem(SCOPE_DEBUG_STORAGE_KEY);
-    if (!raw) {
-      return {};
-    }
-    return parseScopeCalibration(JSON.parse(raw) as unknown);
-  } catch {
-    return {};
-  }
 }
 
 function parseScopeCalibration(value: unknown): ScopeAdjustments {
@@ -641,6 +742,99 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+async function saveScopeAdjustmentToSource(caseId: string, nodeKey: string, adjustment: ScopeAdjustment | null) {
+  const response = await fetch("/__scope_calibration", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      schema: SCOPE_CALIBRATION_SCHEMA,
+      caseId,
+      nodeId: nodeKey,
+      adjustment
+    })
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `source save failed with ${response.status}`);
+  }
+}
+
+function stopDistanceForDecision(route: RouteState, decision: Decision | null): number {
+  if (!decision) {
+    return route.totalLengthMm;
+  }
+  const nodeDistance = route.nodeDistancesMm[decision.nodeId] ?? nearestRouteDistance(route, decision.nodeRas);
+  const previousDistance = previousRouteNodeDistance(route, decision);
+  const availableIncomingMm = previousDistance == null ? DRIVE_BRANCH_BACK_MM : Math.max(0, nodeDistance - previousDistance);
+  const backDistanceMm = safeIncomingBackDistance(DRIVE_BRANCH_BACK_MM, availableIncomingMm);
+  return clamp(nodeDistance - backDistanceMm, 0, route.totalLengthMm);
+}
+
+function buildDrivePose(route: RouteState, distanceMm: number, decision: Decision | null): ScopeCameraPose {
+  const cameraRas = pointAtRouteDistance(route, distanceMm);
+  const decisionDistanceMm = decision ? (route.nodeDistancesMm[decision.nodeId] ?? nearestRouteDistance(route, decision.nodeRas)) : null;
+  const targetDistanceMm =
+    decisionDistanceMm == null ? distanceMm + DRIVE_LOOK_AHEAD_MM : Math.min(distanceMm + DRIVE_LOOK_AHEAD_MM, decisionDistanceMm);
+  let targetRas = pointAtRouteDistance(route, targetDistanceMm);
+  if (distanceBetween(cameraRas, targetRas) < 2) {
+    targetRas = pointAtRouteDistance(route, distanceMm + DRIVE_LOOK_AHEAD_MM);
+  }
+  return { cameraRas, targetRas };
+}
+
+function pointAtRouteDistance(route: RouteState, distanceMm: number): Vec3 {
+  if (!route.routePoints.length) {
+    return [0, 0, 0];
+  }
+  const clampedDistance = clamp(distanceMm, 0, route.totalLengthMm);
+  for (let index = 1; index < route.routePoints.length; index += 1) {
+    const prevDistance = route.routeDistancesMm[index - 1] ?? 0;
+    const nextDistance = route.routeDistancesMm[index] ?? prevDistance;
+    if (nextDistance >= clampedDistance) {
+      const prev = route.routePoints[index - 1];
+      const next = route.routePoints[index];
+      const t = (clampedDistance - prevDistance) / Math.max(nextDistance - prevDistance, 1e-6);
+      return [prev[0] + (next[0] - prev[0]) * t, prev[1] + (next[1] - prev[1]) * t, prev[2] + (next[2] - prev[2]) * t];
+    }
+  }
+  return route.routePoints[route.routePoints.length - 1];
+}
+
+function nearestRouteDistance(route: RouteState, ras: Vec3): number {
+  let bestDistance = 0;
+  let bestPointDistance = Number.POSITIVE_INFINITY;
+  route.routePoints.forEach((point, index) => {
+    const pointDistance = distanceBetween(point, ras);
+    if (pointDistance < bestPointDistance) {
+      bestPointDistance = pointDistance;
+      bestDistance = route.routeDistancesMm[index] ?? 0;
+    }
+  });
+  return bestDistance;
+}
+
+function distanceBetween(a: Vec3, b: Vec3): number {
+  return Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+}
+
+function previousRouteNodeDistance(route: RouteState, decision: Decision): number | null {
+  const nodeIndex = route.nodePath.indexOf(decision.nodeId);
+  if (nodeIndex <= 0) {
+    return null;
+  }
+  return route.nodeDistancesMm[route.nodePath[nodeIndex - 1]] ?? null;
+}
+
+function safeIncomingBackDistance(requestedBackMm: number, availableIncomingMm: number): number {
+  if (!Number.isFinite(availableIncomingMm) || availableIncomingMm <= 0) {
+    return requestedBackMm;
+  }
+  const shortSegmentBackMm = Math.max(availableIncomingMm * DRIVE_SHORT_SEGMENT_BACK_FRACTION, availableIncomingMm - DRIVE_PARENT_CLEARANCE_MM);
+  return clamp(requestedBackMm, 0, Math.min(DRIVE_BRANCH_BACK_MM, shortSegmentBackMm));
+}
+
 function anatomyDisplayName(anatomy?: AirwayAnatomyLabel | null): string | null {
   return anatomy?.subsegment?.name ?? anatomy?.segment?.name ?? anatomy?.lobe?.name ?? null;
 }
@@ -686,22 +880,35 @@ function Feedback({
 
 function buildHighlights(
   edgesById: Map<number, AirwayEdge>,
+  currentDecision: Decision | null,
   selectedEdgeId: number | null,
   selectedCorrect: boolean,
   correctEdgeId: number | null
 ) {
   const highlights: { edge: AirwayEdge; color: string; width: number }[] = [];
   if (selectedEdgeId != null) {
-    const selected = edgesById.get(selectedEdgeId);
-    if (selected) {
-      highlights.push({ edge: selected, color: selectedCorrect ? "#2ef082" : "#ff5964", width: 4.5 });
-    }
+    pushOptionHighlights(highlights, edgesById, currentDecision, selectedEdgeId, selectedCorrect ? "#2ef082" : "#ff5964", 4.5);
   }
   if (selectedEdgeId != null && !selectedCorrect && correctEdgeId != null) {
-    const correct = edgesById.get(correctEdgeId);
-    if (correct) {
-      highlights.push({ edge: correct, color: "#ffd43a", width: 4 });
-    }
+    pushOptionHighlights(highlights, edgesById, currentDecision, correctEdgeId, "#ffd43a", 4);
   }
   return highlights;
+}
+
+function pushOptionHighlights(
+  highlights: { edge: AirwayEdge; color: string; width: number }[],
+  edgesById: Map<number, AirwayEdge>,
+  currentDecision: Decision | null,
+  edgeId: number,
+  color: string,
+  width: number
+) {
+  const option = currentDecision?.options.find((candidate) => candidate.edgeId === edgeId);
+  const edgeIds = option?.pathEdgeIds?.length ? option.pathEdgeIds : [edgeId];
+  edgeIds.forEach((pathEdgeId) => {
+    const edge = edgesById.get(pathEdgeId);
+    if (edge) {
+      highlights.push({ edge, color, width });
+    }
+  });
 }

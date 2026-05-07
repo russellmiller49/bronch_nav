@@ -1,6 +1,7 @@
 {
   "schema": "bronchoedu_web_case/v1",
   "caseId": "synthetic-target",
+  "scopeCalibrationJson": "scope_calibration.json",
   "educationOnly": true,
   "notForClinicalUse": true,
   "ct": {
