@@ -1,0 +1,1240 @@
+{
+  "schema": "airway_labeling_candidate_results/v1",
+  "mode": "candidate_generation_not_final_labeling",
+  "source": {
+    "generator": "airway_labeling.scripts.export_book_candidates",
+    "networkVtk": "data/airway/Network model.vtk",
+    "rulesYaml": null,
+    "hierarchyJson": null,
+    "coordinateSystem": "RAS",
+    "seedNodeLabels": {
+      "10": {
+        "label": "RLL_BASAL",
+        "confidence": 1.0,
+        "locked": true
+      },
+      "3": {
+        "label": "RUL",
+        "confidence": 1.0,
+        "locked": true
+      }
+    },
+    "seedEdgeLabels": {},
+    "reviewQueue": []
+  },
+  "edges": {
+    "21": [
+      {
+        "edgeId": 21,
+        "candidateLabel": "RLL_B10",
+        "candidateLevel": "segmental",
+        "score": 0.8443,
+        "evidence": {
+          "parent_label": "RLL_BASAL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              1.77154,
+              -8.03314,
+              2.24573
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.263361,
+              "caudal": 0.0,
+              "dorsal": 0.942062,
+              "ventral": 0.0,
+              "lateral": 0.207752,
+              "medial": 0.0,
+              "horizontal": 0.964697,
+              "vertical": 0.263361
+            },
+            "expected_terms": [
+              "dorsal",
+              "posterior_basal"
+            ],
+            "score": 0.7065,
+            "warnings": []
+          },
+          "direction_score": 0.7065,
+          "sibling_order_score": 0.5,
+          "generation_score": 0.5,
+          "branch_length_score": 1.0,
+          "radius_score": 0.7575,
+          "branch_angle_score": 0.5105,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            21,
+            22
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RLL_BASAL",
+          "rule_metadata": {
+            "display_name": "Right lower lobe posterior basal bronchus",
+            "children": {
+              "RLL_B10a": {
+                "expected_direction": [
+                  "dorsal",
+                  "lateral"
+                ],
+                "aliases": [
+                  "right B10a"
+                ]
+              },
+              "RLL_B10b": {
+                "expected_direction": [
+                  "ventral",
+                  "lateral_or_dorsal_subbranch"
+                ],
+                "aliases": [
+                  "right B10b"
+                ]
+              },
+              "RLL_B10c": {
+                "expected_direction": [
+                  "ventral",
+                  "medial"
+                ],
+                "aliases": [
+                  "right B10c"
+                ]
+              }
+            },
+            "common_variants": [
+              "B10b+B10c common trunk",
+              "lateral daughter branches may arise from B10b+B10c, B10b, or B10c"
+            ]
+          }
+        },
+        "explanation": "RLL_B10 candidate for edge 21: parent context RLL_BASAL; direction 0.71 for dorsal, posterior_basal; sibling order 0.50; generation/length/radius/angle/proximity 0.50/1.00/0.76/0.51/0.50. Final candidate score: 0.84.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      },
+      {
+        "edgeId": 21,
+        "candidateLabel": "RLL_B9",
+        "candidateLevel": "segmental",
+        "score": 0.7238,
+        "evidence": {
+          "parent_label": "RLL_BASAL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              1.77154,
+              -8.03314,
+              2.24573
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.263361,
+              "caudal": 0.0,
+              "dorsal": 0.942062,
+              "ventral": 0.0,
+              "lateral": 0.207752,
+              "medial": 0.0,
+              "horizontal": 0.964697,
+              "vertical": 0.263361
+            },
+            "expected_terms": [
+              "lateral",
+              "basal"
+            ],
+            "score": 0.1039,
+            "warnings": []
+          },
+          "direction_score": 0.1039,
+          "sibling_order_score": 0.5,
+          "generation_score": 0.5,
+          "branch_length_score": 1.0,
+          "radius_score": 0.7575,
+          "branch_angle_score": 0.5105,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            21,
+            22
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RLL_BASAL",
+          "rule_metadata": {
+            "display_name": "Right lower lobe lateral basal bronchus",
+            "children": {
+              "RLL_B9a": {
+                "expected_direction": [
+                  "dorsal",
+                  "lateral"
+                ],
+                "aliases": [
+                  "right B9a"
+                ]
+              },
+              "RLL_B9b": {
+                "expected_direction": [
+                  "ventral",
+                  "medial"
+                ],
+                "aliases": [
+                  "right B9b"
+                ]
+              }
+            }
+          }
+        },
+        "explanation": "RLL_B9 candidate for edge 21: parent context RLL_BASAL; direction 0.10 for lateral, basal; sibling order 0.50; generation/length/radius/angle/proximity 0.50/1.00/0.76/0.51/0.50. Final candidate score: 0.72.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      },
+      {
+        "edgeId": 21,
+        "candidateLabel": "RLL_B7",
+        "candidateLevel": "segmental",
+        "score": 0.703,
+        "evidence": {
+          "parent_label": "RLL_BASAL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              1.77154,
+              -8.03314,
+              2.24573
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.263361,
+              "caudal": 0.0,
+              "dorsal": 0.942062,
+              "ventral": 0.0,
+              "lateral": 0.207752,
+              "medial": 0.0,
+              "horizontal": 0.964697,
+              "vertical": 0.263361
+            },
+            "expected_terms": [
+              "ventral",
+              "medial"
+            ],
+            "score": 0.0,
+            "warnings": []
+          },
+          "direction_score": 0.0,
+          "sibling_order_score": 0.5,
+          "generation_score": 0.5,
+          "branch_length_score": 1.0,
+          "radius_score": 0.7575,
+          "branch_angle_score": 0.5105,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            21,
+            22
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RLL_BASAL",
+          "rule_metadata": {
+            "display_name": "Right lower lobe medial basal bronchus",
+            "anatomy_hints": [
+              "runs on ventral side of inferior pulmonary vein"
+            ],
+            "children": {
+              "RLL_B7a": {
+                "expected_direction": [
+                  "lateral"
+                ],
+                "aliases": [
+                  "right B7a"
+                ]
+              },
+              "RLL_B7b": {
+                "expected_direction": [
+                  "medial"
+                ],
+                "aliases": [
+                  "right B7b"
+                ]
+              }
+            },
+            "confidence_policy": "lower_confidence_if_B7_absent_or_common_trunk"
+          }
+        },
+        "explanation": "RLL_B7 candidate for edge 21: parent context RLL_BASAL; direction 0.00 for ventral, medial; sibling order 0.50; generation/length/radius/angle/proximity 0.50/1.00/0.76/0.51/0.50. Final candidate score: 0.70.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      }
+    ],
+    "22": [
+      {
+        "edgeId": 22,
+        "candidateLabel": "RLL_B9",
+        "candidateLevel": "segmental",
+        "score": 0.7846,
+        "evidence": {
+          "parent_label": "RLL_BASAL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              1.75647,
+              -0.2135,
+              -7.07233
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.0,
+              "caudal": 0.9701,
+              "dorsal": 0.029286,
+              "ventral": 0.0,
+              "lateral": 0.240932,
+              "medial": 0.0,
+              "horizontal": 0.242706,
+              "vertical": 0.9701
+            },
+            "expected_terms": [
+              "lateral",
+              "basal"
+            ],
+            "score": 0.363,
+            "warnings": []
+          },
+          "direction_score": 0.363,
+          "sibling_order_score": 0.5,
+          "generation_score": 0.5,
+          "branch_length_score": 0.937,
+          "radius_score": 1.0,
+          "branch_angle_score": 0.6499,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            21,
+            22
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RLL_BASAL",
+          "rule_metadata": {
+            "display_name": "Right lower lobe lateral basal bronchus",
+            "children": {
+              "RLL_B9a": {
+                "expected_direction": [
+                  "dorsal",
+                  "lateral"
+                ],
+                "aliases": [
+                  "right B9a"
+                ]
+              },
+              "RLL_B9b": {
+                "expected_direction": [
+                  "ventral",
+                  "medial"
+                ],
+                "aliases": [
+                  "right B9b"
+                ]
+              }
+            }
+          }
+        },
+        "explanation": "RLL_B9 candidate for edge 22: parent context RLL_BASAL; direction 0.36 for lateral, basal; sibling order 0.50; generation/length/radius/angle/proximity 0.50/0.94/1.00/0.65/0.50. Final candidate score: 0.78.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      },
+      {
+        "edgeId": 22,
+        "candidateLabel": "RLL_B10",
+        "candidateLevel": "segmental",
+        "score": 0.7634,
+        "evidence": {
+          "parent_label": "RLL_BASAL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              1.75647,
+              -0.2135,
+              -7.07233
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.0,
+              "caudal": 0.9701,
+              "dorsal": 0.029286,
+              "ventral": 0.0,
+              "lateral": 0.240932,
+              "medial": 0.0,
+              "horizontal": 0.242706,
+              "vertical": 0.9701
+            },
+            "expected_terms": [
+              "dorsal",
+              "posterior_basal"
+            ],
+            "score": 0.2572,
+            "warnings": []
+          },
+          "direction_score": 0.2572,
+          "sibling_order_score": 0.5,
+          "generation_score": 0.5,
+          "branch_length_score": 0.937,
+          "radius_score": 1.0,
+          "branch_angle_score": 0.6499,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            21,
+            22
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RLL_BASAL",
+          "rule_metadata": {
+            "display_name": "Right lower lobe posterior basal bronchus",
+            "children": {
+              "RLL_B10a": {
+                "expected_direction": [
+                  "dorsal",
+                  "lateral"
+                ],
+                "aliases": [
+                  "right B10a"
+                ]
+              },
+              "RLL_B10b": {
+                "expected_direction": [
+                  "ventral",
+                  "lateral_or_dorsal_subbranch"
+                ],
+                "aliases": [
+                  "right B10b"
+                ]
+              },
+              "RLL_B10c": {
+                "expected_direction": [
+                  "ventral",
+                  "medial"
+                ],
+                "aliases": [
+                  "right B10c"
+                ]
+              }
+            },
+            "common_variants": [
+              "B10b+B10c common trunk",
+              "lateral daughter branches may arise from B10b+B10c, B10b, or B10c"
+            ]
+          }
+        },
+        "explanation": "RLL_B10 candidate for edge 22: parent context RLL_BASAL; direction 0.26 for dorsal, posterior_basal; sibling order 0.50; generation/length/radius/angle/proximity 0.50/0.94/1.00/0.65/0.50. Final candidate score: 0.76.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      },
+      {
+        "edgeId": 22,
+        "candidateLabel": "RLL_B8",
+        "candidateLevel": "segmental",
+        "score": 0.7605,
+        "evidence": {
+          "parent_label": "RLL_BASAL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              1.75647,
+              -0.2135,
+              -7.07233
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.0,
+              "caudal": 0.9701,
+              "dorsal": 0.029286,
+              "ventral": 0.0,
+              "lateral": 0.240932,
+              "medial": 0.0,
+              "horizontal": 0.242706,
+              "vertical": 0.9701
+            },
+            "expected_terms": [
+              "ventral",
+              "basal"
+            ],
+            "score": 0.2425,
+            "warnings": []
+          },
+          "direction_score": 0.2425,
+          "sibling_order_score": 0.5,
+          "generation_score": 0.5,
+          "branch_length_score": 0.937,
+          "radius_score": 1.0,
+          "branch_angle_score": 0.6499,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            21,
+            22
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RLL_BASAL",
+          "rule_metadata": {
+            "display_name": "Right lower lobe anterior basal bronchus",
+            "children": {
+              "RLL_B8a": {
+                "expected_direction": [
+                  "ventral",
+                  "lateral"
+                ],
+                "aliases": [
+                  "right B8a"
+                ],
+                "confidence_policy": "candidate_only_unless_sibling_context_clear"
+              },
+              "RLL_B8b": {
+                "expected_direction": [
+                  "ventral",
+                  "medial_or_caudal"
+                ],
+                "aliases": [
+                  "right B8b"
+                ],
+                "confidence_policy": "candidate_only_unless_sibling_context_clear"
+              }
+            }
+          }
+        },
+        "explanation": "RLL_B8 candidate for edge 22: parent context RLL_BASAL; direction 0.24 for ventral, basal; sibling order 0.50; generation/length/radius/angle/proximity 0.50/0.94/1.00/0.65/0.50. Final candidate score: 0.76.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      }
+    ],
+    "6": [
+      {
+        "edgeId": 6,
+        "candidateLabel": "RUL_B3",
+        "candidateLevel": "segmental",
+        "score": 0.8535,
+        "evidence": {
+          "parent_label": "RUL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              6.62408,
+              8.0051,
+              -1.44763
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.0,
+              "caudal": 0.137991,
+              "dorsal": 0.0,
+              "ventral": 0.763063,
+              "lateral": 0.631422,
+              "medial": 0.0,
+              "horizontal": 0.990433,
+              "vertical": 0.137991
+            },
+            "expected_terms": [
+              "ventral"
+            ],
+            "score": 0.7631,
+            "warnings": []
+          },
+          "direction_score": 0.7631,
+          "sibling_order_score": 0.5,
+          "generation_score": 0.5,
+          "branch_length_score": 0.7704,
+          "radius_score": 1.0,
+          "branch_angle_score": 0.5012,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            6,
+            7,
+            8
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RUL",
+          "rule_metadata": {
+            "display_name": "Right upper lobe anterior bronchus",
+            "children": {
+              "RUL_B3a": {
+                "expected_direction": [
+                  "ventral",
+                  "lateral"
+                ],
+                "aliases": [
+                  "right B3a"
+                ]
+              },
+              "RUL_B3b": {
+                "expected_direction": [
+                  "ventral"
+                ],
+                "aliases": [
+                  "right B3b"
+                ]
+              }
+            },
+            "horizontal_pattern_note": [
+              "B3a and B3b often run parallel to axial CT; use sibling left/right relationship rather than raw axial spur alone"
+            ]
+          }
+        },
+        "explanation": "RUL_B3 candidate for edge 6: parent context RUL; direction 0.76 for ventral; sibling order 0.50; generation/length/radius/angle/proximity 0.50/0.77/1.00/0.50/0.50. Final candidate score: 0.85.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      },
+      {
+        "edgeId": 6,
+        "candidateLabel": "RUL_B2",
+        "candidateLevel": "segmental",
+        "score": 0.7009,
+        "evidence": {
+          "parent_label": "RUL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              6.62408,
+              8.0051,
+              -1.44763
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.0,
+              "caudal": 0.137991,
+              "dorsal": 0.0,
+              "ventral": 0.763063,
+              "lateral": 0.631422,
+              "medial": 0.0,
+              "horizontal": 0.990433,
+              "vertical": 0.137991
+            },
+            "expected_terms": [
+              "dorsal",
+              "cranial"
+            ],
+            "score": 0.0,
+            "warnings": []
+          },
+          "direction_score": 0.0,
+          "sibling_order_score": 0.5,
+          "generation_score": 0.5,
+          "branch_length_score": 0.7704,
+          "radius_score": 1.0,
+          "branch_angle_score": 0.5012,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            6,
+            7,
+            8
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RUL",
+          "rule_metadata": {
+            "display_name": "Right upper lobe posterior bronchus",
+            "children": {
+              "RUL_B2a": {
+                "expected_direction": [
+                  "dorsal",
+                  "cranial"
+                ],
+                "aliases": [
+                  "right B2a"
+                ]
+              },
+              "RUL_B2b": {
+                "expected_direction": [
+                  "dorsal",
+                  "lateral"
+                ],
+                "aliases": [
+                  "right B2b"
+                ]
+              }
+            }
+          }
+        },
+        "explanation": "RUL_B2 candidate for edge 6: parent context RUL; direction 0.00 for dorsal, cranial; sibling order 0.50; generation/length/radius/angle/proximity 0.50/0.77/1.00/0.50/0.50. Final candidate score: 0.70.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      },
+      {
+        "edgeId": 6,
+        "candidateLabel": "RUL_B1",
+        "candidateLevel": "segmental",
+        "score": 0.6259,
+        "evidence": {
+          "parent_label": "RUL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              6.62408,
+              8.0051,
+              -1.44763
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.0,
+              "caudal": 0.137991,
+              "dorsal": 0.0,
+              "ventral": 0.763063,
+              "lateral": 0.631422,
+              "medial": 0.0,
+              "horizontal": 0.990433,
+              "vertical": 0.137991
+            },
+            "expected_terms": [
+              "cranial",
+              "toward_lung_apex"
+            ],
+            "score": 0.0,
+            "warnings": []
+          },
+          "direction_score": 0.0,
+          "sibling_order_score": 0.0,
+          "generation_score": 0.5,
+          "branch_length_score": 0.7704,
+          "radius_score": 1.0,
+          "branch_angle_score": 0.5012,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            6,
+            7,
+            8
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RUL",
+          "rule_metadata": {
+            "display_name": "Right upper lobe apical bronchus",
+            "children": {
+              "RUL_B1a": {
+                "expected_direction": [
+                  "apical",
+                  "cranial",
+                  "dorsal"
+                ],
+                "distribution": "apex area of S1",
+                "aliases": [
+                  "right B1a"
+                ]
+              },
+              "RUL_B1b": {
+                "expected_direction": [
+                  "ventral",
+                  "cranial"
+                ],
+                "distribution": "ventral/cranial region of S1",
+                "aliases": [
+                  "right B1b"
+                ]
+              }
+            },
+            "common_variants": [
+              "B1 may share a common trunk with B2 or B3 branches",
+              "B1a+B2a common trunk may occur"
+            ]
+          }
+        },
+        "explanation": "RUL_B1 candidate for edge 6: parent context RUL; direction 0.00 for cranial, toward_lung_apex; sibling order 0.00; generation/length/radius/angle/proximity 0.50/0.77/1.00/0.50/0.50. Final candidate score: 0.63.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      }
+    ],
+    "7": [
+      {
+        "edgeId": 7,
+        "candidateLabel": "RUL_B2",
+        "candidateLevel": "segmental",
+        "score": 0.828,
+        "evidence": {
+          "parent_label": "RUL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              5.37017,
+              -11.75092,
+              5.03882
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.36335,
+              "caudal": 0.0,
+              "dorsal": 0.84736,
+              "ventral": 0.0,
+              "lateral": 0.387243,
+              "medial": 0.0,
+              "horizontal": 0.931653,
+              "vertical": 0.36335
+            },
+            "expected_terms": [
+              "dorsal",
+              "cranial"
+            ],
+            "score": 0.6054,
+            "warnings": []
+          },
+          "direction_score": 0.6054,
+          "sibling_order_score": 0.5,
+          "generation_score": 0.5,
+          "branch_length_score": 1.0,
+          "radius_score": 0.9366,
+          "branch_angle_score": 0.4618,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            6,
+            7,
+            8
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RUL",
+          "rule_metadata": {
+            "display_name": "Right upper lobe posterior bronchus",
+            "children": {
+              "RUL_B2a": {
+                "expected_direction": [
+                  "dorsal",
+                  "cranial"
+                ],
+                "aliases": [
+                  "right B2a"
+                ]
+              },
+              "RUL_B2b": {
+                "expected_direction": [
+                  "dorsal",
+                  "lateral"
+                ],
+                "aliases": [
+                  "right B2b"
+                ]
+              }
+            }
+          }
+        },
+        "explanation": "RUL_B2 candidate for edge 7: parent context RUL; direction 0.61 for dorsal, cranial; sibling order 0.50; generation/length/radius/angle/proximity 0.50/1.00/0.94/0.46/0.50. Final candidate score: 0.83.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      },
+      {
+        "edgeId": 7,
+        "candidateLabel": "RUL_B1",
+        "candidateLevel": "segmental",
+        "score": 0.7796,
+        "evidence": {
+          "parent_label": "RUL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              5.37017,
+              -11.75092,
+              5.03882
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.36335,
+              "caudal": 0.0,
+              "dorsal": 0.84736,
+              "ventral": 0.0,
+              "lateral": 0.387243,
+              "medial": 0.0,
+              "horizontal": 0.931653,
+              "vertical": 0.36335
+            },
+            "expected_terms": [
+              "cranial",
+              "toward_lung_apex"
+            ],
+            "score": 0.3634,
+            "warnings": []
+          },
+          "direction_score": 0.3634,
+          "sibling_order_score": 0.5,
+          "generation_score": 0.5,
+          "branch_length_score": 1.0,
+          "radius_score": 0.9366,
+          "branch_angle_score": 0.4618,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            6,
+            7,
+            8
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RUL",
+          "rule_metadata": {
+            "display_name": "Right upper lobe apical bronchus",
+            "children": {
+              "RUL_B1a": {
+                "expected_direction": [
+                  "apical",
+                  "cranial",
+                  "dorsal"
+                ],
+                "distribution": "apex area of S1",
+                "aliases": [
+                  "right B1a"
+                ]
+              },
+              "RUL_B1b": {
+                "expected_direction": [
+                  "ventral",
+                  "cranial"
+                ],
+                "distribution": "ventral/cranial region of S1",
+                "aliases": [
+                  "right B1b"
+                ]
+              }
+            },
+            "common_variants": [
+              "B1 may share a common trunk with B2 or B3 branches",
+              "B1a+B2a common trunk may occur"
+            ]
+          }
+        },
+        "explanation": "RUL_B1 candidate for edge 7: parent context RUL; direction 0.36 for cranial, toward_lung_apex; sibling order 0.50; generation/length/radius/angle/proximity 0.50/1.00/0.94/0.46/0.50. Final candidate score: 0.78.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      },
+      {
+        "edgeId": 7,
+        "candidateLabel": "RUL_B3",
+        "candidateLevel": "segmental",
+        "score": 0.707,
+        "evidence": {
+          "parent_label": "RUL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              5.37017,
+              -11.75092,
+              5.03882
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.36335,
+              "caudal": 0.0,
+              "dorsal": 0.84736,
+              "ventral": 0.0,
+              "lateral": 0.387243,
+              "medial": 0.0,
+              "horizontal": 0.931653,
+              "vertical": 0.36335
+            },
+            "expected_terms": [
+              "ventral"
+            ],
+            "score": 0.0,
+            "warnings": []
+          },
+          "direction_score": 0.0,
+          "sibling_order_score": 0.5,
+          "generation_score": 0.5,
+          "branch_length_score": 1.0,
+          "radius_score": 0.9366,
+          "branch_angle_score": 0.4618,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            6,
+            7,
+            8
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RUL",
+          "rule_metadata": {
+            "display_name": "Right upper lobe anterior bronchus",
+            "children": {
+              "RUL_B3a": {
+                "expected_direction": [
+                  "ventral",
+                  "lateral"
+                ],
+                "aliases": [
+                  "right B3a"
+                ]
+              },
+              "RUL_B3b": {
+                "expected_direction": [
+                  "ventral"
+                ],
+                "aliases": [
+                  "right B3b"
+                ]
+              }
+            },
+            "horizontal_pattern_note": [
+              "B3a and B3b often run parallel to axial CT; use sibling left/right relationship rather than raw axial spur alone"
+            ]
+          }
+        },
+        "explanation": "RUL_B3 candidate for edge 7: parent context RUL; direction 0.00 for ventral; sibling order 0.50; generation/length/radius/angle/proximity 0.50/1.00/0.94/0.46/0.50. Final candidate score: 0.71.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      }
+    ],
+    "8": [
+      {
+        "edgeId": 8,
+        "candidateLabel": "RUL_B1",
+        "candidateLevel": "segmental",
+        "score": 0.9775,
+        "evidence": {
+          "parent_label": "RUL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              4.08743,
+              1.44547,
+              14.18652
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.956338,
+              "caudal": 0.0,
+              "dorsal": 0.0,
+              "ventral": 0.097441,
+              "lateral": 0.275541,
+              "medial": 0.0,
+              "horizontal": 0.292263,
+              "vertical": 0.956338
+            },
+            "expected_terms": [
+              "cranial",
+              "toward_lung_apex"
+            ],
+            "score": 0.9563,
+            "warnings": []
+          },
+          "direction_score": 0.9563,
+          "sibling_order_score": 1.0,
+          "generation_score": 0.5,
+          "branch_length_score": 1.0,
+          "radius_score": 0.8434,
+          "branch_angle_score": 0.6964,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            6,
+            7,
+            8
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RUL",
+          "rule_metadata": {
+            "display_name": "Right upper lobe apical bronchus",
+            "children": {
+              "RUL_B1a": {
+                "expected_direction": [
+                  "apical",
+                  "cranial",
+                  "dorsal"
+                ],
+                "distribution": "apex area of S1",
+                "aliases": [
+                  "right B1a"
+                ]
+              },
+              "RUL_B1b": {
+                "expected_direction": [
+                  "ventral",
+                  "cranial"
+                ],
+                "distribution": "ventral/cranial region of S1",
+                "aliases": [
+                  "right B1b"
+                ]
+              }
+            },
+            "common_variants": [
+              "B1 may share a common trunk with B2 or B3 branches",
+              "B1a+B2a common trunk may occur"
+            ]
+          }
+        },
+        "explanation": "RUL_B1 candidate for edge 8: parent context RUL; direction 0.96 for cranial, toward_lung_apex; sibling order 1.00; generation/length/radius/angle/proximity 0.50/1.00/0.84/0.70/0.50. Final candidate score: 0.98.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      },
+      {
+        "edgeId": 8,
+        "candidateLabel": "RUL_B2",
+        "candidateLevel": "segmental",
+        "score": 0.8068,
+        "evidence": {
+          "parent_label": "RUL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              4.08743,
+              1.44547,
+              14.18652
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.956338,
+              "caudal": 0.0,
+              "dorsal": 0.0,
+              "ventral": 0.097441,
+              "lateral": 0.275541,
+              "medial": 0.0,
+              "horizontal": 0.292263,
+              "vertical": 0.956338
+            },
+            "expected_terms": [
+              "dorsal",
+              "cranial"
+            ],
+            "score": 0.4782,
+            "warnings": []
+          },
+          "direction_score": 0.4782,
+          "sibling_order_score": 0.5,
+          "generation_score": 0.5,
+          "branch_length_score": 1.0,
+          "radius_score": 0.8434,
+          "branch_angle_score": 0.6964,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            6,
+            7,
+            8
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RUL",
+          "rule_metadata": {
+            "display_name": "Right upper lobe posterior bronchus",
+            "children": {
+              "RUL_B2a": {
+                "expected_direction": [
+                  "dorsal",
+                  "cranial"
+                ],
+                "aliases": [
+                  "right B2a"
+                ]
+              },
+              "RUL_B2b": {
+                "expected_direction": [
+                  "dorsal",
+                  "lateral"
+                ],
+                "aliases": [
+                  "right B2b"
+                ]
+              }
+            }
+          }
+        },
+        "explanation": "RUL_B2 candidate for edge 8: parent context RUL; direction 0.48 for dorsal, cranial; sibling order 0.50; generation/length/radius/angle/proximity 0.50/1.00/0.84/0.70/0.50. Final candidate score: 0.81.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      },
+      {
+        "edgeId": 8,
+        "candidateLabel": "RUL_B3",
+        "candidateLevel": "segmental",
+        "score": 0.7307,
+        "evidence": {
+          "parent_label": "RUL",
+          "parent_context_source": "node_labels",
+          "parent_confidence": 1.0,
+          "parent_locked": true,
+          "direction_evidence": {
+            "edge_vector": [
+              4.08743,
+              1.44547,
+              14.18652
+            ],
+            "coordinate_system": "RAS",
+            "side": "right",
+            "anatomical_components": {
+              "cranial": 0.956338,
+              "caudal": 0.0,
+              "dorsal": 0.0,
+              "ventral": 0.097441,
+              "lateral": 0.275541,
+              "medial": 0.0,
+              "horizontal": 0.292263,
+              "vertical": 0.956338
+            },
+            "expected_terms": [
+              "ventral"
+            ],
+            "score": 0.0974,
+            "warnings": []
+          },
+          "direction_score": 0.0974,
+          "sibling_order_score": 0.5,
+          "generation_score": 0.5,
+          "branch_length_score": 1.0,
+          "radius_score": 0.8434,
+          "branch_angle_score": 0.6964,
+          "proximity_score": 0.5,
+          "sibling_edge_ids": [
+            6,
+            7,
+            8
+          ],
+          "coordinate_system_uncertain": false,
+          "rule_section": "RUL",
+          "rule_metadata": {
+            "display_name": "Right upper lobe anterior bronchus",
+            "children": {
+              "RUL_B3a": {
+                "expected_direction": [
+                  "ventral",
+                  "lateral"
+                ],
+                "aliases": [
+                  "right B3a"
+                ]
+              },
+              "RUL_B3b": {
+                "expected_direction": [
+                  "ventral"
+                ],
+                "aliases": [
+                  "right B3b"
+                ]
+              }
+            },
+            "horizontal_pattern_note": [
+              "B3a and B3b often run parallel to axial CT; use sibling left/right relationship rather than raw axial spur alone"
+            ]
+          }
+        },
+        "explanation": "RUL_B3 candidate for edge 8: parent context RUL; direction 0.10 for ventral; sibling order 0.50; generation/length/radius/angle/proximity 0.50/1.00/0.84/0.70/0.50. Final candidate score: 0.73.",
+        "warnings": [],
+        "source": "book_directional_rules"
+      }
+    ]
+  }
+}

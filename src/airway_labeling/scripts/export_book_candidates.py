@@ -63,6 +63,8 @@ def export_book_candidates(args: argparse.Namespace) -> dict[str, Any]:
             "rulesYaml": str(args.rules_yaml) if args.rules_yaml else None,
             "hierarchyJson": str(args.hierarchy_json) if args.hierarchy_json else None,
             "coordinateSystem": args.coordinate_system,
+            "seedNodeLabels": hierarchy.get("node_labels", {}),
+            "seedEdgeLabels": hierarchy.get("edge_labels", {}),
             "reviewQueue": hierarchy.get("review_queue", []),
         },
         max_per_edge=max(1, int(args.max_per_edge)),

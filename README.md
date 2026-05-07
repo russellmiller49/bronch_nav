@@ -192,6 +192,23 @@ Then add the labels to `bronchoedu-prepare-web-case`:
   --airway-anatomy-json outputs/airway_anatomy_labels.json
 ```
 
+To visually review book-rule candidate labels, export a candidate sidecar with
+reviewed parent-context seeds and place it next to `case.json`:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m airway_labeling.scripts.export_book_candidates \
+  --network-vtk "data/airway/Network model.vtk" \
+  --out-json web/public/cases/default/book_candidates.json \
+  --node-label 3=RUL \
+  --node-label 10=RLL_BASAL
+```
+
+`bronchoedu-prepare-web-case` can also bake the same candidates into `case.json`:
+
+```bash
+  --airway-candidates-json web/public/cases/default/book_candidates.json
+```
+
 Run the app:
 
 ```bash
