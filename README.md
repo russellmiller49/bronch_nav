@@ -171,6 +171,27 @@ To bake a scope calibration export into the browser case, add:
   --scope-calibration-json outputs/scope_calibration.json
 ```
 
+To import AirMorph/AirwayNet anatomical labels, first run AirMorph externally,
+then map its label volumes onto the Slicer network:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m bronchoedu.scripts.import_airmorph_labels \
+  --network-vtk "data/airway/Network model.vtk" \
+  --ct data/target/target_clean_ct.nrrd \
+  --pred-lob outputs/airmorph/patient_pred_lob.nii.gz \
+  --pred-seg outputs/airmorph/patient_pred_seg.nii.gz \
+  --pred-sub outputs/airmorph/patient_pred_sub.nii.gz \
+  --airway-bin outputs/airmorph/airway_bin.nii.gz \
+  --class2anno outputs/airmorph/class2anno.json \
+  --out-json outputs/airway_anatomy_labels.json
+```
+
+Then add the labels to `bronchoedu-prepare-web-case`:
+
+```bash
+  --airway-anatomy-json outputs/airway_anatomy_labels.json
+```
+
 Run the app:
 
 ```bash

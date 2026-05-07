@@ -1,0 +1,370 @@
+schema_version: "0.1"
+source_basis: "Bronchial Branch Tracing directional bronchial nomenclature and representative branch cases"
+mode: "candidate_generation_not_final_labeling"
+
+global_naming_principles:
+  priority_order:
+    - cranial_over_caudal
+    - dorsal_over_ventral
+    - lateral_over_medial
+  generations:
+    segmental: "B1, B2, B3..."
+    subsegmental: "a, b, c"
+    sub_subsegmental: "i, ii, iii"
+    sub_sub_subsegmental: "alpha, beta, gamma"
+    sixth_generation: "x, y"
+  lateral_branch:
+    suffix: "*"
+    generation_counting: "do_not_increment_generation"
+    suspicion_features:
+      - "daughter branch much smaller than continuing main-axis branch"
+      - "diameter ratio to counterpart branch < 0.75"
+      - "steep branch angle"
+      - "distributed to inner or middle lung layer"
+      - "often about half the diameter of parent/counterpart"
+
+candidate_scoring:
+  base_score: 0.30
+  parent_context_bonus: 0.20
+  sibling_order_bonus: 0.20
+  direction_match_bonus: 0.20
+  variant_penalty: -0.10
+  coordinate_uncertainty_penalty: -0.20
+  missing_sibling_penalty: -0.10
+  lateral_branch_bonus_if_features_match: 0.15
+
+right_lung:
+  RUL:
+    parent: "RUL bronchus"
+    rotation_hint_for_ct: "rotate axial CT counterclockwise 90 degrees when matching bronchoscopic view"
+    segmental_candidates:
+      RUL_B1:
+        display_name: "Right upper lobe apical bronchus"
+        expected_direction: ["cranial", "toward_lung_apex"]
+        sibling_context:
+          - "usually more cranial than B2 and B3"
+          - "typical bronchoscopic location near 12 o'clock at RUL orifice"
+        children:
+          RUL_B1a:
+            expected_direction: ["apical", "cranial", "dorsal"]
+            distribution: "apex area of S1"
+            aliases: ["right B1a"]
+          RUL_B1b:
+            expected_direction: ["ventral", "cranial"]
+            distribution: "ventral/cranial region of S1"
+            aliases: ["right B1b"]
+        common_variants:
+          - "B1 may share a common trunk with B2 or B3 branches"
+          - "B1a+B2a common trunk may occur"
+
+      RUL_B2:
+        display_name: "Right upper lobe posterior bronchus"
+        expected_direction: ["dorsal", "cranial"]
+        sibling_context:
+          - "often associated with longitudinal folds in membranous portion of right main bronchus"
+          - "typical bronchoscopic location near 4 o'clock at RUL orifice"
+        children:
+          RUL_B2a:
+            expected_direction: ["dorsal", "cranial"]
+            aliases: ["right B2a"]
+          RUL_B2b:
+            expected_direction: ["dorsal", "lateral"]
+            aliases: ["right B2b"]
+
+      RUL_B3:
+        display_name: "Right upper lobe anterior bronchus"
+        expected_direction: ["ventral"]
+        sibling_context:
+          - "typical bronchoscopic location near 7 o'clock at RUL orifice"
+        children:
+          RUL_B3a:
+            expected_direction: ["ventral", "lateral"]
+            aliases: ["right B3a"]
+          RUL_B3b:
+            expected_direction: ["ventral"]
+            aliases: ["right B3b"]
+        horizontal_pattern_note:
+          - "B3a and B3b often run parallel to axial CT; use sibling left/right relationship rather than raw axial spur alone"
+
+  RML:
+    parent: "Right middle lobe bronchus"
+    rotation_hint_for_ct: "reverse axial CT left-right for middle lobe"
+    bronchoscopic_view_axes:
+      top: "cranial"
+      bottom: "caudal"
+      right: "lateral"
+      left: "medial"
+    segmental_candidates:
+      RML_B4:
+        display_name: "Right middle lobe lateral bronchus"
+        expected_direction: ["lateral"]
+        children:
+          RML_B4a:
+            expected_direction: ["lateral", "dorsal", "cranial"]
+            aliases: ["right B4a"]
+          RML_B4b:
+            expected_direction: ["lateral", "ventral", "caudal"]
+            aliases: ["right B4b"]
+        notes:
+          - "B4a and B4b frequently run horizontally; use proximity to B5 and cranial/caudal relationship"
+
+      RML_B5:
+        display_name: "Right middle lobe medial bronchus"
+        expected_direction: ["ventral", "caudal", "medial"]
+        children:
+          RML_B5a:
+            expected_direction: ["ventral", "horizontal"]
+            aliases: ["right B5a"]
+          RML_B5b:
+            expected_direction: ["ventral", "caudal"]
+            aliases: ["right B5b"]
+        notes:
+          - "B5a usually advances horizontally on the ventral side"
+          - "B5b commonly advances caudally; raw axial spur may be reliable when vertical"
+
+  RLL_SUPERIOR:
+    parent: "Right lower lobe superior segment bronchus"
+    rotation_hint_for_ct: "reverse axial CT left-right for lower lobe"
+    segmental_candidates:
+      RLL_B6:
+        display_name: "Right lower lobe superior segment bronchus"
+        expected_direction: ["dorsal", "superior_segment"]
+        children:
+          RLL_B6a:
+            expected_direction: ["cranial"]
+            aliases: ["right B6a"]
+            variant_note: "often branches with B6c but may branch from B6b or B6c"
+          RLL_B6b:
+            expected_direction: ["caudal", "lateral"]
+            aliases: ["right B6b"]
+          RLL_B6c:
+            expected_direction: ["caudal", "medial"]
+            aliases: ["right B6c"]
+        common_variants:
+          - "B6a may arise from common trunk with B6c"
+          - "B6a may occasionally arise from B6b or B6c"
+          - "large caudal B6c may reduce expected B10a territory"
+
+  RLL_BASAL:
+    parent: "Right truncus basalis"
+    rotation_hint_for_ct: "reverse axial CT left-right for lower lobe"
+    optional_variant_branches:
+      RLL_BSTAR:
+        display_name: "Right subsuperior bronchus"
+        label: "B*"
+        expected_location: ["between_B6_and_basal_segments", "dorsal", "lateral"]
+        parent_candidates:
+          - "RLL_B8_plus_B9_plus_B10"
+          - "RLL_B8_plus_B9"
+          - "RLL_B9_plus_B10"
+        confidence_policy: "variant_candidate_only"
+
+    segmental_candidates:
+      RLL_B7:
+        display_name: "Right lower lobe medial basal bronchus"
+        expected_direction: ["ventral", "medial"]
+        anatomy_hints:
+          - "runs on ventral side of inferior pulmonary vein"
+        children:
+          RLL_B7a:
+            expected_direction: ["lateral"]
+            aliases: ["right B7a"]
+          RLL_B7b:
+            expected_direction: ["medial"]
+            aliases: ["right B7b"]
+        confidence_policy: "lower_confidence_if_B7_absent_or_common_trunk"
+
+      RLL_B8:
+        display_name: "Right lower lobe anterior basal bronchus"
+        expected_direction: ["ventral", "basal"]
+        children:
+          RLL_B8a:
+            expected_direction: ["ventral", "lateral"]
+            aliases: ["right B8a"]
+            confidence_policy: "candidate_only_unless_sibling_context_clear"
+          RLL_B8b:
+            expected_direction: ["ventral", "medial_or_caudal"]
+            aliases: ["right B8b"]
+            confidence_policy: "candidate_only_unless_sibling_context_clear"
+
+      RLL_B9:
+        display_name: "Right lower lobe lateral basal bronchus"
+        expected_direction: ["lateral", "basal"]
+        children:
+          RLL_B9a:
+            expected_direction: ["dorsal", "lateral"]
+            aliases: ["right B9a"]
+          RLL_B9b:
+            expected_direction: ["ventral", "medial"]
+            aliases: ["right B9b"]
+
+      RLL_B10:
+        display_name: "Right lower lobe posterior basal bronchus"
+        expected_direction: ["dorsal", "posterior_basal"]
+        children:
+          RLL_B10a:
+            expected_direction: ["dorsal", "lateral"]
+            aliases: ["right B10a"]
+          RLL_B10b:
+            expected_direction: ["ventral", "lateral_or_dorsal_subbranch"]
+            aliases: ["right B10b"]
+          RLL_B10c:
+            expected_direction: ["ventral", "medial"]
+            aliases: ["right B10c"]
+        common_variants:
+          - "B10b+B10c common trunk"
+          - "lateral daughter branches may arise from B10b+B10c, B10b, or B10c"
+
+left_lung:
+  LUL_SUPERIOR:
+    parent: "Left superior segment bronchus"
+    rotation_hint_for_ct: "rotate axial CT clockwise 90 degrees when matching bronchoscopic view"
+    segmental_candidates:
+      LUL_B1_2:
+        display_name: "Left upper lobe apicoposterior bronchus"
+        expected_direction: ["dorsal", "cranial"]
+        children:
+          LUL_B1_2a:
+            expected_direction: ["toward_lung_apex", "cranial"]
+            aliases: ["left B1+2a"]
+          LUL_B1_2b:
+            expected_direction: ["toward_lung_apex", "dorsal"]
+            aliases: ["left B1+2b"]
+          LUL_B1_2c:
+            expected_direction: ["lateral", "horizontal"]
+            aliases: ["left B1+2c"]
+            priority_note: "often first branch from B1+2"
+        common_variants:
+          - "B1+2c may be absent or territory may be supplied by neighboring B3 branches"
+          - "B1+2a and B1+2b may form common trunk"
+
+      LUL_B3:
+        display_name: "Left upper lobe anterior bronchus"
+        expected_direction: ["ventral"]
+        children:
+          LUL_B3a:
+            expected_direction: ["lateral", "horizontal"]
+            aliases: ["left B3a"]
+          LUL_B3b:
+            expected_direction: ["ventral", "horizontal"]
+            aliases: ["left B3b"]
+          LUL_B3c:
+            expected_direction: ["ventral", "cranial"]
+            aliases: ["left B3c"]
+            anatomy_note: "left B3c corresponds functionally to right B1b territory in the book"
+        horizontal_pattern_note:
+          - "B3a and B3b often require horizontal-pattern reasoning"
+          - "use proximity to B1+2, B3c, and lingular segment"
+
+  LINGULA:
+    parent: "Left lingular segment bronchus"
+    rotation_hint_for_ct: "reverse axial CT left-right for lingular segment"
+    bronchoscopic_view_axes:
+      top: "cranial"
+      bottom: "caudal"
+      left: "lateral"
+      right: "medial"
+    segmental_candidates:
+      LINGULA_B4:
+        display_name: "Left superior lingular bronchus"
+        expected_direction: ["cranial", "lateral"]
+        children:
+          LINGULA_B4a:
+            expected_direction: ["lateral", "cranial", "dorsal"]
+            aliases: ["left B4a"]
+          LINGULA_B4b:
+            expected_direction: ["medial", "caudal", "ventral"]
+            aliases: ["left B4b"]
+        notes:
+          - "B4a and B4b often run in horizontal pattern"
+          - "use closeness to B5 and cranial/caudal relationship"
+
+      LINGULA_B5:
+        display_name: "Left inferior lingular bronchus"
+        expected_direction: ["medial", "ventral", "caudal"]
+        children:
+          LINGULA_B5a:
+            expected_direction: ["lateral", "ventral", "close_to_B4"]
+            aliases: ["left B5a"]
+          LINGULA_B5b:
+            expected_direction: ["caudal", "far_from_B4"]
+            aliases: ["left B5b"]
+        notes:
+          - "B5a may be more horizontal"
+          - "B5b often descends caudally"
+
+  LLL_SUPERIOR:
+    parent: "Left lower lobe superior segment bronchus"
+    rotation_hint_for_ct: "reverse axial CT left-right for lower lobe"
+    segmental_candidates:
+      LLL_B6:
+        display_name: "Left lower lobe superior segment bronchus"
+        expected_direction: ["dorsal", "superior_segment"]
+        children:
+          LLL_B6a:
+            expected_direction: ["cranial"]
+            aliases: ["left B6a"]
+            variant_note: "often branches from common trunk with B6b; may branch from B6b or B6c"
+          LLL_B6b:
+            expected_direction: ["caudal", "lateral"]
+            aliases: ["left B6b"]
+          LLL_B6c:
+            expected_direction: ["caudal", "medial"]
+            aliases: ["left B6c"]
+        common_variants:
+          - "B6a often branches with B6b"
+          - "large caudal B6c may reduce expected B10a territory"
+
+  LLL_BASAL:
+    parent: "Left truncus basalis"
+    rotation_hint_for_ct: "reverse axial CT left-right for lower lobe"
+    optional_variant_branches:
+      LLL_BSTAR:
+        display_name: "Left subsuperior bronchus"
+        label: "B*"
+        expected_location: ["between_B6_and_basal_segments", "dorsal", "lateral"]
+        confidence_policy: "variant_candidate_only"
+
+    segmental_candidates:
+      LLL_B8:
+        display_name: "Left anterior basal bronchus"
+        expected_direction: ["ventral", "basal"]
+        children:
+          LLL_B8a:
+            expected_direction: ["lateral"]
+            aliases: ["left B8a"]
+          LLL_B8b:
+            expected_direction: ["caudal"]
+            aliases: ["left B8b"]
+
+      LLL_B9:
+        display_name: "Left lateral basal bronchus"
+        expected_direction: ["lateral", "basal"]
+        children:
+          LLL_B9a:
+            expected_direction: ["lateral", "dorsal_or_cranial"]
+            aliases: ["left B9a"]
+          LLL_B9b:
+            expected_direction: ["caudal"]
+            aliases: ["left B9b"]
+
+      LLL_B10:
+        display_name: "Left posterior basal bronchus"
+        expected_direction: ["dorsal", "posterior_basal"]
+        children:
+          LLL_B10a:
+            expected_direction: ["dorsal"]
+            aliases: ["left B10a"]
+          LLL_B10b:
+            expected_direction: ["lateral"]
+            aliases: ["left B10b"]
+          LLL_B10c:
+            expected_direction: ["medial"]
+            aliases: ["left B10c"]
+
+      LLL_B7_8:
+        display_name: "Left anteromedial basal combined candidate"
+        expected_direction: ["ventral", "medial", "basal"]
+        confidence_policy: "use only if your target hierarchy includes combined left B7+8"
+        notes:
+          - "Book's left basal section emphasizes B8-B10 rather than a separate left B7"

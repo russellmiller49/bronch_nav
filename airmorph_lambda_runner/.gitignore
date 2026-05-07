@@ -1,0 +1,12 @@
+AirMorph/
+case/input/*.nrrd
+case/input/*.nii
+case/input/*.nii.gz
+case/input/*.vtk
+case/work/
+logs/
+navigation_module/
+outputs/
+*.tar.gz
+__pycache__/
+.DS_Store

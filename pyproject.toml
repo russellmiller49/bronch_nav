@@ -26,9 +26,14 @@ bronchoedu-insert-nodule = "bronchoedu.scripts.insert_nodule_asset:main"
 bronchoedu-route-from-mask = "bronchoedu.scripts.route_from_mask_centroid:main"
 bronchoedu-run-demo = "bronchoedu.scripts.run_end_to_end_demo:main"
 bronchoedu-prepare-web-case = "bronchoedu.scripts.prepare_web_case:main"
+bronchoedu-import-airmorph-labels = "bronchoedu.scripts.import_airmorph_labels:main"
+airway-labeling-export-book-candidates = "airway_labeling.scripts.export_book_candidates:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+airway_labeling = ["labels/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

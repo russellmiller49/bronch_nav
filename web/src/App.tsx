@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AirwayEdge, Decision, LoadedCase, RouteState, ScopeAdjustment, ScopeAdjustments, ScopeCalibrationPayload } from "./types";
+import type {
+  AirwayAnatomyLabel,
+  AirwayCandidateLabel,
+  AirwayEdge,
+  Decision,
+  LoadedCase,
+  RouteState,
+  ScopeAdjustment,
+  ScopeAdjustments,
+  ScopeCalibrationPayload
+} from "./types";
 import { loadCase } from "./caseLoader";
 import { clamp, type CtViewMode, type PlaneKind } from "./geometry";
 import { buildRoute, createIndexes } from "./route";
-import { buildAirwayFrame, CtPane } from "./components/CtPane";
+import { buildAirwayFrame, CtPane, type CandidateOverlay } from "./components/CtPane";
 import { BronchoscopeView, DEFAULT_SCOPE_ADJUSTMENT, normalizeScopeAdjustment } from "./components/BronchoscopeView";
 import { AirwayMap } from "./components/AirwayMap";
 
@@ -20,6 +30,7 @@ export function App() {
   const [currentDecisionIndex, setCurrentDecisionIndex] = useState(0);
   const [selectedEdgeId, setSelectedEdgeId] = useState<number | null>(null);
   const [showRoute, setShowRoute] = useState(false);
+  const [showCandidateLabels, setShowCandidateLabels] = useState(true);
   const [ctViewMode, setCtViewMode] = useState<CtViewMode>("standard");
   const [sliceOffsets, setSliceOffsets] = useState<SliceOffsets>(ZERO_SLICE_OFFSETS);
   const [ctZoom, setCtZoom] = useState(1);
@@ -52,11 +63,17 @@ export function App() {
 
   const currentDecision: Decision | null = route?.decisions[currentDecisionIndex] ?? null;
   const selectedNode = loadedCase && selectedEndpointId ? loadedCase.metadata.airway.nodes.find((node) => node.id === selectedEndpointId) : null;
+  const selectedEndpointAnatomy = anatomyDisplayName(selectedNode?.anatomy);
   const noduleRas = selectedNode?.ras ?? loadedCase?.metadata.initial.snappedTerminalRas;
   const focusRas = currentDecision?.nodeRas ?? noduleRas ?? loadedCase?.metadata.initial.targetRas;
   const selectedOption = currentDecision?.options.find((option) => option.edgeId === selectedEdgeId) ?? null;
   const correctOption = currentDecision?.options.find((option) => option.isCorrect) ?? null;
   const airwayFrame = useMemo(() => (route && focusRas ? buildAirwayFrame(route.routePoints, focusRas) : null), [route, focusRas]);
+  const hasCandidateLabels = loadedCase?.metadata.airway.edges.some((edge) => edge.candidateLabels?.length) ?? false;
+  const candidateOverlays = useMemo(
+    () => (showCandidateLabels && currentDecision ? buildCandidateOverlays(currentDecision, indexes?.edgesById ?? new Map()) : []),
+    [showCandidateLabels, currentDecision, indexes]
+  );
 
   useEffect(() => {
     setCurrentDecisionIndex(0);
@@ -235,6 +252,15 @@ export function App() {
           <input type="checkbox" checked={showRoute} onChange={(event) => setShowRoute(event.target.checked)} />
           <span>Centerline</span>
         </label>
+        <label className={`toggle ${hasCandidateLabels ? "" : "toggle-disabled"}`}>
+          <input
+            type="checkbox"
+            checked={showCandidateLabels && hasCandidateLabels}
+            disabled={!hasCandidateLabels}
+            onChange={(event) => setShowCandidateLabels(event.target.checked)}
+          />
+          <span>Candidates</span>
+        </label>
         <label className="toggle">
           <input
             type="checkbox"
@@ -258,7 +284,7 @@ export function App() {
           <span className="section-label">Target</span>
           <h1>Snap nodule, then choose the airway.</h1>
           <p>
-            Endpoint {selectedEndpointId} is active. Drag the red target in the airway map to pick a different terminal branch.
+            Endpoint {selectedEndpointId} is active{selectedEndpointAnatomy ? ` (${selectedEndpointAnatomy})` : ""}. Drag the red target in the airway map to pick a different terminal branch.
           </p>
           <div className="inline-actions">
             <button className="secondary-action" onClick={() => moveEndpoint(-1)}>
@@ -403,10 +429,12 @@ export function App() {
                 {currentDecision.options.map((option) => {
                   const selected = selectedEdgeId === option.edgeId;
                   const stateClass = selected ? (option.isCorrect ? "choice-correct" : "choice-wrong") : "";
+                  const edge = indexes.edgesById.get(option.edgeId);
+                  const candidate = topCandidate(edge);
                   return (
                     <button key={option.edgeId} className={`choice-button ${stateClass}`} onClick={() => chooseOption(option.edgeId)}>
                       <strong>{option.label}</strong>
-                      <span>Cell {option.edgeId}</span>
+                      <span>{candidate && showCandidateLabels ? `${candidate.candidateLabel} ${candidate.score.toFixed(2)}` : (anatomyDisplayName(edge?.anatomy) ?? `Cell ${option.edgeId}`)}</span>
                     </button>
                   );
                 })}
@@ -453,6 +481,7 @@ export function App() {
             sliceOffset={sliceOffsets.axial}
             showRoute={showRoute}
             highlightEdges={highlightEdges}
+            candidateOverlays={candidateOverlays}
             zoom={ctZoom}
             onSliceScroll={handleSliceScroll}
             onZoomChange={nudgeZoom}
@@ -470,6 +499,7 @@ export function App() {
             sliceOffset={sliceOffsets.coronal}
             showRoute={showRoute}
             highlightEdges={highlightEdges}
+            candidateOverlays={candidateOverlays}
             zoom={ctZoom}
             onSliceScroll={handleSliceScroll}
             onZoomChange={nudgeZoom}
@@ -487,6 +517,7 @@ export function App() {
             sliceOffset={sliceOffsets.sagittal}
             showRoute={showRoute}
             highlightEdges={highlightEdges}
+            candidateOverlays={candidateOverlays}
             zoom={ctZoom}
             onSliceScroll={handleSliceScroll}
             onZoomChange={nudgeZoom}
@@ -506,6 +537,7 @@ export function App() {
             indexes={indexes}
             route={route}
             decision={currentDecision}
+            candidateOverlays={candidateOverlays}
             selectedEndpointId={selectedEndpointId ?? loadedCase.metadata.initial.snappedTerminalNodeId}
             selectedEdgeId={selectedEdgeId}
             onEndpointChange={setSelectedEndpointId}
@@ -607,6 +639,33 @@ function finiteNumber(value: unknown): number | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function anatomyDisplayName(anatomy?: AirwayAnatomyLabel | null): string | null {
+  return anatomy?.subsegment?.name ?? anatomy?.segment?.name ?? anatomy?.lobe?.name ?? null;
+}
+
+function topCandidate(edge?: AirwayEdge | null): AirwayCandidateLabel | null {
+  return edge?.candidateLabels?.[0] ?? null;
+}
+
+function buildCandidateOverlays(currentDecision: Decision, edgesById: Map<number, AirwayEdge>): CandidateOverlay[] {
+  const colors = ["#ffdf5d", "#67e8f9", "#f0abfc", "#86efac"];
+  return currentDecision.options.flatMap((option, index) => {
+    const edge = edgesById.get(option.edgeId);
+    const candidate = topCandidate(edge);
+    if (!edge || !candidate) {
+      return [];
+    }
+    return [
+      {
+        edge,
+        label: candidate.candidateLabel,
+        score: candidate.score,
+        color: colors[index % colors.length]
+      }
+    ];
+  });
 }
 
 function Feedback({

@@ -4,12 +4,14 @@ import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import type { Decision, RouteState, Vec3, WebCase } from "../types";
 import { rasToScene } from "../geometry";
 import { childNodeForEdge, type CaseIndexes, orientedEdgePoints } from "../route";
+import type { CandidateOverlay } from "./CtPane";
 
 interface MapLabel {
+  key: string;
   label: string;
   x: number;
   y: number;
-  state: "neutral" | "correct" | "wrong";
+  state: "neutral" | "correct" | "wrong" | "candidate";
 }
 
 interface AirwayMapProps {
@@ -17,6 +19,7 @@ interface AirwayMapProps {
   indexes: CaseIndexes;
   route: RouteState;
   decision: Decision | null;
+  candidateOverlays: CandidateOverlay[];
   selectedEndpointId: number;
   selectedEdgeId: number | null;
   onEndpointChange: (nodeId: number) => void;
@@ -30,6 +33,7 @@ export function AirwayMap({
   indexes,
   route,
   decision,
+  candidateOverlays,
   selectedEndpointId,
   selectedEdgeId,
   onEndpointChange,
@@ -128,11 +132,28 @@ export function AirwayMap({
         const isSelected = selectedEdgeId === option.edgeId;
         const state: MapLabel["state"] = !isSelected ? "neutral" : option.isCorrect ? "correct" : "wrong";
         return {
+          key: `choice-${option.edgeId}`,
           label: option.label,
           x: labelScreen.x,
           y: labelScreen.y,
           state
         };
+      });
+      candidateOverlays.forEach((candidate, index) => {
+        const node = indexes.nodesById.get(decision.nodeId);
+        if (!node) {
+          return;
+        }
+        const labelPoint = pointAlong(orientedEdgePoints(candidate.edge, node.id, childNodeForEdge(candidate.edge, node.id, indexes)), 58);
+        const branchScreen = projectToScreen(labelPoint, camera, mount);
+        const spread = (index - (candidateOverlays.length - 1) / 2) * 16;
+        next.push({
+          key: `candidate-${candidate.edge.id}-${candidate.label}`,
+          label: `${candidate.label} ${candidate.score.toFixed(2)}`,
+          x: clampScreen(branchScreen.x, 42, mount.clientWidth - 42),
+          y: clampScreen(branchScreen.y + spread, 18, mount.clientHeight - 18),
+          state: "candidate"
+        });
       });
       setLabels(next);
     };
@@ -202,7 +223,7 @@ export function AirwayMap({
       renderer.forceContextLoss();
       mount.innerHTML = "";
     };
-  }, [webCase, indexes, route, decision, selectedEndpointId, selectedEdgeId, meshUrl]);
+  }, [webCase, indexes, route, decision, candidateOverlays, selectedEndpointId, selectedEdgeId, meshUrl]);
 
   return (
     <section className="map-panel">
@@ -214,7 +235,7 @@ export function AirwayMap({
         <div ref={mountRef} className="map-render" />
         {labels.map((item) => (
           <span
-            key={item.label}
+            key={item.key}
             className={`map-label map-label-${item.state}`}
             style={{ left: `${item.x}px`, top: `${item.y}px` }}
           >

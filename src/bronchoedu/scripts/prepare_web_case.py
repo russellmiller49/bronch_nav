@@ -33,6 +33,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional bronchoscope scope-calibration JSON exported from the web debug UI.",
     )
+    parser.add_argument(
+        "--airway-anatomy-json",
+        default=None,
+        help="Optional airway_anatomy_labels.json produced by bronchoedu-import-airmorph-labels.",
+    )
+    parser.add_argument(
+        "--airway-candidates-json",
+        default=None,
+        help="Optional book-rule airway candidate labels JSON produced by airway-labeling-export-book-candidates.",
+    )
     return parser
 
 
@@ -116,6 +126,65 @@ def _load_scope_calibration(path: str | Path, case_id: str) -> dict[str, Any]:
     }
 
 
+def _load_airway_anatomy(path: str | Path) -> dict[str, Any]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Airway anatomy JSON must contain an object.")
+    if payload.get("schema") != "bronchoedu_airway_anatomy/v1":
+        raise ValueError("Airway anatomy JSON schema must be bronchoedu_airway_anatomy/v1.")
+    if not isinstance(payload.get("edges"), dict) or not isinstance(payload.get("nodes"), dict):
+        raise ValueError("Airway anatomy JSON must include nodes and edges objects.")
+    return payload
+
+
+def _load_airway_candidates(path: str | Path) -> dict[str, Any]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Airway candidates JSON must contain an object.")
+    if payload.get("schema") != "airway_labeling_candidate_results/v1":
+        raise ValueError("Airway candidates JSON schema must be airway_labeling_candidate_results/v1.")
+    if not isinstance(payload.get("edges"), dict):
+        raise ValueError("Airway candidates JSON must include an edges object.")
+    return payload
+
+
+def _anatomy_for(collection: dict[str, Any], item_id: int) -> dict[str, Any] | None:
+    value = collection.get(str(item_id), collection.get(item_id))
+    return value if isinstance(value, dict) else None
+
+
+def _candidate_labels_for(collection: dict[str, Any], item_id: int) -> list[dict[str, Any]]:
+    value = collection.get(str(item_id), collection.get(item_id))
+    if isinstance(value, dict):
+        raw_items = value.get("candidateLabels", value.get("candidates", []))
+    else:
+        raw_items = value
+    if not isinstance(raw_items, list):
+        return []
+
+    labels = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        label = item.get("candidateLabel", item.get("candidate_label"))
+        if not label:
+            continue
+        raw_score = item.get("score", 0.0)
+        score = float(raw_score) if isinstance(raw_score, (int, float)) and math.isfinite(float(raw_score)) else 0.0
+        labels.append(
+            {
+                "candidateLabel": str(label),
+                "candidateLevel": str(item.get("candidateLevel", item.get("candidate_level", "segmental"))),
+                "score": _safe_round(score, 4),
+                "explanation": str(item.get("explanation", "")),
+                "warnings": [str(value) for value in item.get("warnings", []) if isinstance(value, str)],
+                "source": str(item.get("source", "book_directional_rules")),
+                "evidence": item.get("evidence", {}),
+            }
+        )
+    return labels
+
+
 def _nearest_terminal_id(network: AirwayNetwork, target_ras: Sequence[float]) -> int:
     candidates = [
         node
@@ -127,8 +196,14 @@ def _nearest_terminal_id(network: AirwayNetwork, target_ras: Sequence[float]) ->
     return min(candidates, key=lambda node: _distance(node.ras, target_ras)).id
 
 
-def _edge_payload(network: AirwayNetwork) -> list[dict[str, Any]]:
+def _edge_payload(
+    network: AirwayNetwork,
+    anatomy: dict[str, Any] | None = None,
+    candidates: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     edges = []
+    anatomy_edges = anatomy.get("edges", {}) if anatomy else {}
+    candidate_edges = candidates.get("edges", {}) if candidates else {}
     for edge in network.edges:
         payload: dict[str, Any] = {
             "id": edge.id,
@@ -142,25 +217,34 @@ def _edge_payload(network: AirwayNetwork) -> list[dict[str, Any]]:
         }
         if edge.radius_mm.size:
             payload["radiusMm"] = [round(float(value), 3) for value in edge.radius_mm]
+        edge_anatomy = _anatomy_for(anatomy_edges, edge.id)
+        if edge_anatomy is not None:
+            payload["anatomy"] = edge_anatomy
+        candidate_labels = _candidate_labels_for(candidate_edges, edge.id)
+        if candidate_labels:
+            payload["candidateLabels"] = candidate_labels
         edges.append(payload)
     return edges
 
 
-def _node_payload(network: AirwayNetwork) -> list[dict[str, Any]]:
+def _node_payload(network: AirwayNetwork, anatomy: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     nodes = []
+    anatomy_nodes = anatomy.get("nodes", {}) if anatomy else {}
     for node in network.nodes:
         parent = network.parents[node.id]
-        nodes.append(
-            {
-                "id": node.id,
-                "ras": _round_list(node.ras, 3),
-                "kind": node.kind,
-                "degree": node.degree,
-                "rootDistanceMm": round(float(network.root_distances[node.id]), 4),
-                "parentNodeId": int(parent[0]) if parent else None,
-                "parentEdgeId": int(parent[1]) if parent else None,
-            }
-        )
+        payload: dict[str, Any] = {
+            "id": node.id,
+            "ras": _round_list(node.ras, 3),
+            "kind": node.kind,
+            "degree": node.degree,
+            "rootDistanceMm": round(float(network.root_distances[node.id]), 4),
+            "parentNodeId": int(parent[0]) if parent else None,
+            "parentEdgeId": int(parent[1]) if parent else None,
+        }
+        node_anatomy = _anatomy_for(anatomy_nodes, node.id)
+        if node_anatomy is not None:
+            payload["anatomy"] = node_anatomy
+        nodes.append(payload)
     return nodes
 
 
@@ -176,6 +260,8 @@ def prepare_web_case(args: argparse.Namespace) -> dict[str, Any]:
     (out_dir / raw_name).write_bytes(preview_zyx.tobytes(order="C"))
 
     network = AirwayNetwork.from_network_vtk(args.network_vtk)
+    airway_anatomy = _load_airway_anatomy(args.airway_anatomy_json) if args.airway_anatomy_json else None
+    airway_candidates = _load_airway_candidates(args.airway_candidates_json) if getattr(args, "airway_candidates_json", None) else None
     route_seed = json.loads(Path(args.route_json).read_text(encoding="utf-8"))
     target_ras = route_seed.get("target_ras")
     if not target_ras:
@@ -212,8 +298,8 @@ def prepare_web_case(args: argparse.Namespace) -> dict[str, Any]:
             "carinaNodeId": network.carina_node_id,
             "terminalNodeIds": terminal_ids,
             "bifurcationNodeIds": bifurcation_ids,
-            "nodes": _node_payload(network),
-            "edges": _edge_payload(network),
+            "nodes": _node_payload(network, airway_anatomy),
+            "edges": _edge_payload(network, airway_anatomy, airway_candidates),
         },
         "initial": {
             "targetRas": _round_list(target_ras, 4),
@@ -227,6 +313,10 @@ def prepare_web_case(args: argparse.Namespace) -> dict[str, Any]:
         case["noduleAsset"] = _prepare_nodule_asset(args.nodule_asset_dir, out_dir)
     if args.scope_calibration_json:
         case["scopeCalibration"] = _load_scope_calibration(args.scope_calibration_json, args.case_id)
+    if airway_anatomy:
+        case["airway"]["anatomySource"] = airway_anatomy.get("source", {})
+    if airway_candidates:
+        case["airway"]["candidateSource"] = airway_candidates.get("source", {})
     case = _sanitize_json(case)
     (out_dir / "case.json").write_text(json.dumps(case, indent=2, allow_nan=False), encoding="utf-8")
     return {

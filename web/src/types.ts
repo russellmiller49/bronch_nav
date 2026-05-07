@@ -57,6 +57,7 @@ export interface AirwayNode {
   rootDistanceMm: number;
   parentNodeId: number | null;
   parentEdgeId: number | null;
+  anatomy?: AirwayAnatomyLabel;
 }
 
 export interface AirwayEdge {
@@ -69,6 +70,41 @@ export interface AirwayEdge {
   minRadiusMm: number | null;
   pointsRas: Vec3[];
   radiusMm?: number[];
+  anatomy?: AirwayAnatomyLabel;
+  candidateLabels?: AirwayCandidateLabel[];
+}
+
+export interface AirwayCandidateLabel {
+  edgeId?: number;
+  candidateLabel: string;
+  candidateLevel: "segmental" | "subsegmental" | "sub_subsegmental" | "variant" | string;
+  score: number;
+  evidence?: Record<string, unknown>;
+  explanation: string;
+  warnings: string[];
+  source: string;
+}
+
+export interface AirwayCandidatePayload {
+  schema: "airway_labeling_candidate_results/v1" | string;
+  source?: Record<string, unknown>;
+  edges: Record<string, AirwayCandidateLabel[] | { candidateLabels?: AirwayCandidateLabel[]; candidates?: AirwayCandidateLabel[] }>;
+}
+
+export interface AirwayAnatomyClass {
+  value: number;
+  name: string;
+  confidence: number;
+}
+
+export interface AirwayAnatomyLabel {
+  sampleCount: number;
+  validSampleCount: number;
+  coverage: number;
+  confidence: number;
+  lobe?: AirwayAnatomyClass;
+  segment?: AirwayAnatomyClass;
+  subsegment?: AirwayAnatomyClass;
 }
 
 export interface WebCase {
@@ -84,6 +120,9 @@ export interface WebCase {
     bifurcationNodeIds: number[];
     nodes: AirwayNode[];
     edges: AirwayEdge[];
+    anatomySource?: Record<string, unknown>;
+    candidateSource?: Record<string, unknown>;
+    candidatesJson?: string;
   };
   initial: {
     targetRas: Vec3;

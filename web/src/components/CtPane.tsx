@@ -21,6 +21,13 @@ interface HighlightEdge {
   width: number;
 }
 
+export interface CandidateOverlay {
+  edge: AirwayEdge;
+  label: string;
+  score: number;
+  color: string;
+}
+
 export interface AirwayFrame {
   origin: Vec3;
   tangent: Vec3;
@@ -41,6 +48,7 @@ interface CtPaneProps {
   sliceOffset: number;
   showRoute: boolean;
   highlightEdges: HighlightEdge[];
+  candidateOverlays: CandidateOverlay[];
   zoom: number;
   onSliceScroll: (plane: PlaneKind, delta: number) => void;
   onZoomChange: (delta: number) => void;
@@ -71,6 +79,7 @@ export function CtPane({
   sliceOffset,
   showRoute,
   highlightEdges,
+  candidateOverlays,
   zoom,
   onSliceScroll,
   onZoomChange
@@ -114,11 +123,15 @@ export function CtPane({
     highlightEdges.forEach(({ edge, color, width }) => {
       drawPolyline(ctx, drawInfo, edge.pointsRas, color, width, 0.95);
     });
+    candidateOverlays.forEach(({ edge, label, score, color }) => {
+      drawPolyline(ctx, drawInfo, edge.pointsRas, color, 1.7, 0.72);
+      drawEdgeLabel(ctx, drawInfo, edge, `${label} ${score.toFixed(2)}`, color);
+    });
     drawMarker(ctx, drawInfo, focusRas, "#ffcc28", 5, "scope");
     if (!noduleAsset) {
       drawMarker(ctx, drawInfo, noduleRas, "#ff5b68", 6, "target");
     }
-  }, [plane, viewMode, ct, volume, focusRas, noduleRas, noduleAsset, routePoints, airwayFrame, sliceOffset, showRoute, highlightEdges]);
+  }, [plane, viewMode, ct, volume, focusRas, noduleRas, noduleAsset, routePoints, airwayFrame, sliceOffset, showRoute, highlightEdges, candidateOverlays]);
 
   const title = viewMode === "standard" ? STANDARD_TITLES[plane] : AIRWAY_TITLES[plane];
 
@@ -430,6 +443,62 @@ function drawMarker(ctx: CanvasRenderingContext2D, info: DrawInfo, ras: Vec3, co
   ctx.shadowBlur = 4;
   ctx.fillText(label, projected.x + radius + 4, projected.y - radius - 2);
   ctx.restore();
+}
+
+function drawEdgeLabel(ctx: CanvasRenderingContext2D, info: DrawInfo, edge: AirwayEdge, label: string, color: string) {
+  const point = pointAlong(edge.pointsRas, Math.min(32, Math.max(10, edge.lengthMm * 0.42)));
+  const projected = projectPoint(point, info);
+  if (!projected.inFrame || !projected.visible) {
+    return;
+  }
+  ctx.save();
+  ctx.font = "11px Inter, system-ui, sans-serif";
+  const metrics = ctx.measureText(label);
+  const width = Math.min(metrics.width + 12, 118);
+  const height = 18;
+  const x = Math.max(4, Math.min(projected.x + 7, info.width - width - 4));
+  const y = Math.max(4, Math.min(projected.y - height - 5, info.height - height - 4));
+  ctx.globalAlpha = 0.92;
+  ctx.fillStyle = "#081016";
+  roundedRect(ctx, x, y, width, height, 5);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  roundedRect(ctx, x + 0.5, y + 0.5, width - 1, height - 1, 5);
+  ctx.stroke();
+  ctx.fillStyle = "#f4f7f8";
+  ctx.fillText(label, x + 6, y + 12.5, width - 12);
+  ctx.restore();
+}
+
+function pointAlong(points: Vec3[], distanceMm: number): Vec3 {
+  if (!points.length) {
+    return [0, 0, 0];
+  }
+  let travelled = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const prev = points[i - 1];
+    const next = points[i];
+    const segment = Math.hypot(next[0] - prev[0], next[1] - prev[1], next[2] - prev[2]);
+    if (travelled + segment >= distanceMm) {
+      const t = (distanceMm - travelled) / Math.max(segment, 1e-6);
+      return [prev[0] + (next[0] - prev[0]) * t, prev[1] + (next[1] - prev[1]) * t, prev[2] + (next[2] - prev[2]) * t];
+    }
+    travelled += segment;
+  }
+  return points[points.length - 1];
+}
+
+function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
 }
 
 function projectPoint(ras: Vec3, info: DrawInfo) {
