@@ -43,7 +43,8 @@ export const DEFAULT_SCOPE_ADJUSTMENT: ScopeAdjustment = {
 };
 
 const geometryCache = new Map<string, Promise<THREE.BufferGeometry>>();
-const BRANCH_BACK_MM = 18;
+export const MIN_SCOPE_CAMERA_BACK_MM = 4;
+export const MAX_SCOPE_CAMERA_BACK_MM = 45;
 const SHORT_SEGMENT_BACK_FRACTION = 0.7;
 const PARENT_CLEARANCE_MM = 3;
 
@@ -57,6 +58,14 @@ export function normalizeScopeAdjustment(adjustment?: Partial<ScopeAdjustment>):
     fovDeg: numberOrDefault(adjustment?.fovDeg, DEFAULT_SCOPE_ADJUSTMENT.fovDeg),
     labelOffsets: adjustment?.labelOffsets ?? {}
   };
+}
+
+export function scopeCameraBackLimitMm(decision: Decision | null, indexes: CaseIndexes): number {
+  if (!decision) {
+    return MAX_SCOPE_CAMERA_BACK_MM;
+  }
+  const node = indexes.nodesById.get(decision.nodeId);
+  return node ? safeIncomingBackDistance(MAX_SCOPE_CAMERA_BACK_MM, availableIncomingDistance(node, indexes)) : MAX_SCOPE_CAMERA_BACK_MM;
 }
 
 function numberOrDefault(value: number | undefined, fallback: number) {
@@ -469,15 +478,15 @@ function incomingDirection(nodeId: number, indexes: CaseIndexes): Vec3 {
 
 function availableIncomingDistance(node: { rootDistanceMm: number; parentNodeId: number | null }, indexes: CaseIndexes): number {
   const parent = node.parentNodeId == null ? null : indexes.nodesById.get(node.parentNodeId);
-  return parent ? Math.max(0, node.rootDistanceMm - parent.rootDistanceMm) : BRANCH_BACK_MM;
+  return parent ? Math.max(0, node.rootDistanceMm - parent.rootDistanceMm) : MAX_SCOPE_CAMERA_BACK_MM;
 }
 
 function safeIncomingBackDistance(requestedBackMm: number, availableIncomingMm: number): number {
   if (!Number.isFinite(availableIncomingMm) || availableIncomingMm <= 0) {
-    return requestedBackMm;
+    return Math.min(requestedBackMm, MAX_SCOPE_CAMERA_BACK_MM);
   }
   const shortSegmentBackMm = Math.max(availableIncomingMm * SHORT_SEGMENT_BACK_FRACTION, availableIncomingMm - PARENT_CLEARANCE_MM);
-  return Math.max(0, Math.min(requestedBackMm, BRANCH_BACK_MM, shortSegmentBackMm));
+  return Math.max(0, Math.min(requestedBackMm, MAX_SCOPE_CAMERA_BACK_MM, shortSegmentBackMm));
 }
 
 function averageOptionDirection(decision: Decision, indexes: CaseIndexes, fallback: Vec3): Vec3 {

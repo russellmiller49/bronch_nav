@@ -21,9 +21,13 @@ interface AirwayMapProps {
   decision: Decision | null;
   candidateOverlays: CandidateOverlay[];
   selectedEndpointId: number;
+  selectableEndpointIds?: number[];
+  noduleRas: Vec3;
+  noduleRadiusMm?: number | null;
   selectedEdgeId: number | null;
+  committedEdgeIds?: number[];
   driveRas?: Vec3 | null;
-  onEndpointChange: (nodeId: number) => void;
+  onEndpointChange?: (nodeId: number) => void;
   meshUrl?: string;
 }
 
@@ -36,7 +40,11 @@ export function AirwayMap({
   decision,
   candidateOverlays,
   selectedEndpointId,
+  selectableEndpointIds = [],
+  noduleRas,
+  noduleRadiusMm = null,
   selectedEdgeId,
+  committedEdgeIds = [],
   driveRas = null,
   onEndpointChange,
   meshUrl = "/cases/default/airway_surface.stl"
@@ -72,6 +80,7 @@ export function AirwayMap({
     addAirwayLines(scene, webCase, 0x5e8790, 0.18);
     addRouteTube(scene, route.routePoints, 0x2fe2ff, 2.0, 0.98);
     addRouteLines(scene, indexes, route.edgePath, route.nodePath, 0xb7fbff, 0.9);
+    addEdgeHighlights(scene, indexes, committedEdgeIds, 0x2ef082, 1);
     if (decision) {
       addDecisionLines(scene, indexes, decision, selectedEdgeId);
       addCurrentMarker(scene, decision.nodeRas);
@@ -79,7 +88,8 @@ export function AirwayMap({
       addCurrentMarker(scene, driveRas);
     }
     addEndpointDots(scene, webCase, 0.78);
-    addNodule(scene, indexes.nodesById.get(selectedEndpointId)?.ras ?? webCase.initial.snappedTerminalRas);
+    addTargetEndpointDots(scene, indexes, selectableEndpointIds.length ? selectableEndpointIds : [selectedEndpointId], selectedEndpointId);
+    addNodule(scene, noduleRas, noduleRadiusMm);
 
     loadAirwaySurface(meshUrl)
       .then((geometry) => {
@@ -105,8 +115,9 @@ export function AirwayMap({
         renderer.render(scene, camera);
       });
 
-    const terminalScreenPoints = () =>
-      webCase.airway.terminalNodeIds
+    const terminalScreenPoints = () => {
+      const selectable = selectableEndpointIds.length ? selectableEndpointIds : webCase.airway.terminalNodeIds;
+      return selectable
         .map((nodeId) => {
           const node = indexes.nodesById.get(nodeId);
           if (!node) {
@@ -120,6 +131,7 @@ export function AirwayMap({
           };
         })
         .filter(Boolean) as { nodeId: number; x: number; y: number }[];
+    };
 
     const updateLabels = () => {
       if (!decision) {
@@ -175,7 +187,7 @@ export function AirwayMap({
         }
       });
       if (nearestDistance < 64) {
-        onEndpointChangeRef.current(nearest);
+        onEndpointChangeRef.current?.(nearest);
       }
     };
 
@@ -208,9 +220,11 @@ export function AirwayMap({
       renderer.render(scene, camera);
     };
 
-    renderer.domElement.addEventListener("pointerdown", onPointerDown);
-    renderer.domElement.addEventListener("pointermove", onPointerMove);
-    renderer.domElement.addEventListener("pointerup", onPointerUp);
+    if (onEndpointChange) {
+      renderer.domElement.addEventListener("pointerdown", onPointerDown);
+      renderer.domElement.addEventListener("pointermove", onPointerMove);
+      renderer.domElement.addEventListener("pointerup", onPointerUp);
+    }
     window.addEventListener("resize", onResize);
     updateLabels();
     renderer.render(scene, camera);
@@ -225,13 +239,13 @@ export function AirwayMap({
       renderer.forceContextLoss();
       mount.innerHTML = "";
     };
-  }, [webCase, indexes, route, decision, candidateOverlays, selectedEndpointId, selectedEdgeId, driveRas, meshUrl]);
+  }, [webCase, indexes, route, decision, candidateOverlays, selectedEndpointId, selectableEndpointIds, noduleRas, noduleRadiusMm, selectedEdgeId, committedEdgeIds, driveRas, onEndpointChange, meshUrl]);
 
   return (
     <section className="map-panel">
       <div className="pane-chrome">
         <span>3D airway path</span>
-        <span>drag target</span>
+        <span>accepted paths</span>
       </div>
       <div className="map-render-wrap">
         <div ref={mountRef} className="map-render" />
@@ -334,6 +348,16 @@ function addRouteLines(scene: THREE.Scene, indexes: CaseIndexes, edgePath: numbe
   scene.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity })));
 }
 
+function addEdgeHighlights(scene: THREE.Scene, indexes: CaseIndexes, edgeIds: number[], color: number, opacity: number) {
+  const uniqueEdgeIds = edgeIds.filter((edgeId, index) => edgeIds.indexOf(edgeId) === index);
+  uniqueEdgeIds.forEach((edgeId) => {
+    const edge = indexes.edgesById.get(edgeId);
+    if (edge) {
+      addPointLine(scene, edge.pointsRas, color, opacity);
+    }
+  });
+}
+
 function addRouteTube(scene: THREE.Scene, pointsRas: Vec3[], color: number, radius: number, opacity: number) {
   if (pointsRas.length < 2) {
     return;
@@ -378,10 +402,41 @@ function addEndpointDots(scene: THREE.Scene, webCase: WebCase, opacity = 0.78) {
   scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0x9af6ff, size: 3.1, sizeAttenuation: false, transparent: true, opacity })));
 }
 
-function addNodule(scene: THREE.Scene, ras: Vec3) {
+function addTargetEndpointDots(scene: THREE.Scene, indexes: CaseIndexes, endpointIds: number[], selectedEndpointId: number) {
+  const acceptedEndpointIds = endpointIds.filter((nodeId, index) => endpointIds.indexOf(nodeId) === index);
+  const acceptedPositions: number[] = [];
+  acceptedEndpointIds.forEach((nodeId) => {
+    const node = indexes.nodesById.get(nodeId);
+    if (node) {
+      acceptedPositions.push(...rasToScene(node.ras));
+    }
+  });
+  if (acceptedPositions.length) {
+    const acceptedGeometry = new THREE.BufferGeometry();
+    acceptedGeometry.setAttribute("position", new THREE.Float32BufferAttribute(acceptedPositions, 3));
+    scene.add(
+      new THREE.Points(
+        acceptedGeometry,
+        new THREE.PointsMaterial({ color: 0xff8f5f, size: 6.2, sizeAttenuation: false, transparent: true, opacity: 0.96 })
+      )
+    );
+  }
+
+  const selectedNode = indexes.nodesById.get(selectedEndpointId);
+  if (selectedNode) {
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(4.0, 18, 10),
+      new THREE.MeshBasicMaterial({ color: 0xffd23a, transparent: true, opacity: 0.98 })
+    );
+    marker.position.copy(toVector3(selectedNode.ras));
+    scene.add(marker);
+  }
+}
+
+function addNodule(scene: THREE.Scene, ras: Vec3, radiusMm: number | null) {
   const marker = new THREE.Mesh(
-    new THREE.SphereGeometry(6.2, 24, 16),
-    new THREE.MeshBasicMaterial({ color: 0xff5964, transparent: true, opacity: 0.95 })
+    new THREE.SphereGeometry(Math.max(6.2, radiusMm ?? 6.2), 32, 18),
+    new THREE.MeshBasicMaterial({ color: 0xff5964, transparent: true, opacity: radiusMm ? 0.36 : 0.95 })
   );
   marker.position.copy(toVector3(ras));
   scene.add(marker);

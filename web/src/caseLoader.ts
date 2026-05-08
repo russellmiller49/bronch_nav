@@ -1,4 +1,4 @@
-import type { AirwayCandidateLabel, AirwayCandidatePayload, LoadedCase, WebCase } from "./types";
+import type { AirwayCandidateLabel, AirwayCandidatePayload, LoadedCase, LoadedNoduleAsset, NoduleAssetMetadata, WebCase } from "./types";
 
 export async function loadCase(caseUrl = "/cases/default/case.json"): Promise<LoadedCase> {
   const metadata = (await fetch(caseUrl).then((response) => {
@@ -24,15 +24,13 @@ export async function loadCase(caseUrl = "/cases/default/case.json"): Promise<Lo
     return response.arrayBuffer();
   });
 
-  const noduleAsset = metadata.noduleAsset
-    ? {
-        metadata: metadata.noduleAsset,
-        residual: new Int16Array(await fetchCaseArrayBuffer(metadata.noduleAsset.residualRaw, caseUrl, "nodule residual volume")),
-        alpha: new Uint8Array(await fetchCaseArrayBuffer(metadata.noduleAsset.alphaRaw, caseUrl, "nodule alpha volume"))
-      }
-    : null;
+  const noduleAsset = metadata.noduleAsset ? await loadNoduleAsset(metadata.noduleAsset, caseUrl) : null;
+  const noduleAssets: Record<string, LoadedNoduleAsset> = {};
+  for (const target of metadata.noduleTargets ?? []) {
+    noduleAssets[target.id] = await loadNoduleAsset(target.noduleAsset, caseUrl);
+  }
 
-  return { metadata, volume: new Uint8Array(buffer), noduleAsset };
+  return { metadata, volume: new Uint8Array(buffer), noduleAsset, noduleAssets };
 }
 
 async function fetchScopeCalibrationSidecar(metadata: WebCase, caseUrl: string) {
@@ -102,4 +100,12 @@ async function fetchCaseArrayBuffer(path: string, caseUrl: string, label: string
     }
     return response.arrayBuffer();
   });
+}
+
+async function loadNoduleAsset(metadata: NoduleAssetMetadata, caseUrl: string): Promise<LoadedNoduleAsset> {
+  return {
+    metadata,
+    residual: new Int16Array(await fetchCaseArrayBuffer(metadata.residualRaw, caseUrl, `${metadata.assetId} residual volume`)),
+    alpha: new Uint8Array(await fetchCaseArrayBuffer(metadata.alphaRaw, caseUrl, `${metadata.assetId} alpha volume`))
+  };
 }

@@ -30,6 +30,24 @@ export interface LoadedNoduleAsset {
   alpha: Uint8Array;
 }
 
+export interface NoduleTarget {
+  id: string;
+  label: string;
+  targetRas: Vec3;
+  initialTerminalNodeId: number;
+  correctTerminalNodeIds: number[];
+  noduleAsset: NoduleAssetMetadata;
+  locations?: NoduleTargetLocation[];
+}
+
+export interface NoduleTargetLocation {
+  id: string;
+  label: string;
+  targetRas: Vec3;
+  initialTerminalNodeId: number;
+  correctTerminalNodeIds: number[];
+}
+
 export interface ScopeAdjustment {
   cameraBackMm: number;
   lookAheadMm: number;
@@ -133,6 +151,7 @@ export interface WebCase {
     sourceCt: string;
   };
   noduleAsset?: NoduleAssetMetadata;
+  noduleTargets?: NoduleTarget[];
   scopeCalibrationJson?: string;
   scopeCalibration?: ScopeCalibrationPayload;
 }
@@ -141,6 +160,7 @@ export interface LoadedCase {
   metadata: WebCase;
   volume: Uint8Array;
   noduleAsset: LoadedNoduleAsset | null;
+  noduleAssets: Record<string, LoadedNoduleAsset>;
 }
 
 export interface BranchOption {
@@ -149,6 +169,7 @@ export interface BranchOption {
   toNodeId: number;
   isCorrect: boolean;
   pathEdgeIds?: number[];
+  correctTerminalNodeIds?: number[];
 }
 
 export interface Decision {

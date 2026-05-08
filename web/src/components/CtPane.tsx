@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import type { AirwayEdge, CtMetadata, LoadedNoduleAsset, Vec3 } from "../types";
 import {
   add,
@@ -43,7 +43,7 @@ interface CtPaneProps {
   focusRas: Vec3;
   noduleRas: Vec3;
   noduleAsset: LoadedNoduleAsset | null;
-  routePoints: Vec3[];
+  routePaths: Vec3[][];
   airwayFrame: AirwayFrame;
   sliceOffset: number;
   showRoute: boolean;
@@ -52,6 +52,7 @@ interface CtPaneProps {
   zoom: number;
   onSliceScroll: (plane: PlaneKind, delta: number) => void;
   onZoomChange: (delta: number) => void;
+  onTargetDrop?: (ras: Vec3) => void;
 }
 
 const STANDARD_TITLES: Record<PlaneKind, string> = {
@@ -74,7 +75,7 @@ export function CtPane({
   focusRas,
   noduleRas,
   noduleAsset,
-  routePoints,
+  routePaths,
   airwayFrame,
   sliceOffset,
   showRoute,
@@ -82,10 +83,13 @@ export function CtPane({
   candidateOverlays,
   zoom,
   onSliceScroll,
-  onZoomChange
+  onZoomChange,
+  onTargetDrop
 }: CtPaneProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawInfoRef = useRef<DrawInfo | null>(null);
+  const [dropActive, setDropActive] = useState(false);
 
   useEffect(() => {
     const section = sectionRef.current;
@@ -113,12 +117,15 @@ export function CtPane({
       viewMode === "standard"
         ? drawStandardCt(canvas, plane, ct, volume, focusRas, sliceOffset, noduleRas, noduleAsset)
         : drawAirwayAlignedCt(canvas, plane, ct, volume, airwayFrame, sliceOffset, noduleRas, noduleAsset);
+    drawInfoRef.current = drawInfo;
     const ctx = canvas.getContext("2d");
     if (!ctx) {
       return;
     }
     if (showRoute) {
-      drawPolyline(ctx, drawInfo, routePoints, "#4bd7ff", 2.2, 0.86);
+      routePaths.forEach((routePoints) => {
+        drawPolyline(ctx, drawInfo, routePoints, "#4bd7ff", 1.8, 0.72);
+      });
     }
     highlightEdges.forEach(({ edge, color, width }) => {
       drawPolyline(ctx, drawInfo, edge.pointsRas, color, width, 0.95);
@@ -131,12 +138,42 @@ export function CtPane({
     if (!noduleAsset) {
       drawMarker(ctx, drawInfo, noduleRas, "#ff5b68", 6, "target");
     }
-  }, [plane, viewMode, ct, volume, focusRas, noduleRas, noduleAsset, routePoints, airwayFrame, sliceOffset, showRoute, highlightEdges, candidateOverlays]);
+  }, [plane, viewMode, ct, volume, focusRas, noduleRas, noduleAsset, routePaths, airwayFrame, sliceOffset, showRoute, highlightEdges, candidateOverlays]);
 
   const title = viewMode === "standard" ? STANDARD_TITLES[plane] : AIRWAY_TITLES[plane];
+  const handleDragOver = (event: DragEvent<HTMLElement>) => {
+    if (!onTargetDrop) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDropActive(true);
+  };
+  const handleDragLeave = (event: DragEvent<HTMLElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setDropActive(false);
+    }
+  };
+  const handleDrop = (event: DragEvent<HTMLElement>) => {
+    if (!onTargetDrop) {
+      return;
+    }
+    event.preventDefault();
+    setDropActive(false);
+    const ras = droppedCanvasPointToRas(event, canvasRef.current, drawInfoRef.current);
+    if (ras) {
+      onTargetDrop(ras);
+    }
+  };
 
   return (
-    <section ref={sectionRef} className="ct-pane">
+    <section
+      ref={sectionRef}
+      className={`ct-pane ${dropActive ? "ct-pane-drop-active" : ""}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className="pane-chrome">
         <span>{title}</span>
         <span>{viewMode === "standard" ? standardSliceLabel(plane, focusRas, ct, sliceOffset) : airwaySliceLabel(plane, sliceOffset)}</span>
@@ -524,6 +561,38 @@ function projectPoint(ras: Vec3, info: DrawInfo) {
     visible: Math.abs(depthMm) <= 7,
     inFrame: x >= 0 && y >= 0 && x <= info.width && y <= info.height
   };
+}
+
+function droppedCanvasPointToRas(event: DragEvent<HTMLElement>, canvas: HTMLCanvasElement | null, info: DrawInfo | null): Vec3 | null {
+  if (!canvas || !info) {
+    return null;
+  }
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    return null;
+  }
+  const x = clamp(((event.clientX - rect.left) / rect.width) * canvas.width, 0, canvas.width - 1);
+  const y = clamp(((event.clientY - rect.top) / rect.height) * canvas.height, 0, canvas.height - 1);
+  return canvasPointToRas(info, x, y);
+}
+
+function canvasPointToRas(info: DrawInfo, x: number, y: number): Vec3 {
+  if (info.mode === "airway") {
+    const xMm = (x / Math.max(info.width - 1, 1) - 0.5) * info.fovX;
+    const yMm = (0.5 - y / Math.max(info.height - 1, 1)) * info.fovY;
+    return add(info.origin, add(scale(info.xAxis, xMm), scale(info.yAxis, yMm)));
+  }
+
+  const [sx, sy, sz] = info.ct.sizeXyz;
+  const ix = clamp(x, 0, info.width - 1);
+  const iy = clamp(y, 0, info.height - 1);
+  if (info.plane === "axial") {
+    return indexToRas({ i: clamp(ix, 0, sx - 1), j: clamp(iy, 0, sy - 1), k: info.sliceIndex }, info.ct);
+  }
+  if (info.plane === "coronal") {
+    return indexToRas({ i: clamp(ix, 0, sx - 1), j: info.sliceIndex, k: clamp(sz - 1 - iy, 0, sz - 1) }, info.ct);
+  }
+  return indexToRas({ i: info.sliceIndex, j: clamp(ix, 0, sy - 1), k: clamp(sz - 1 - iy, 0, sz - 1) }, info.ct);
 }
 
 function standardSliceLabel(plane: PlaneKind, focusRas: Vec3, ct: CtMetadata, sliceOffset: number) {

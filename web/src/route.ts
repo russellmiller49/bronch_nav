@@ -4,6 +4,10 @@ const CHOICE_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const NON_VISIBLE_TERMINAL_MEAN_RADIUS_MM = 0.35;
 const NON_VISIBLE_TERMINAL_LENGTH_MM = 6;
 
+const NEARBY_DECISION_COLLAPSES = [
+  { parentNodeId: 92, childNodeId: 93, viaEdgeId: 91 }
+] as const;
+
 export interface CaseIndexes {
   nodesById: Map<number, AirwayNode>;
   edgesById: Map<number, AirwayEdge>;
@@ -45,7 +49,8 @@ function appendChildEdge(map: Map<number, AirwayEdge[]>, nodeId: number, edge: A
   map.set(nodeId, current);
 }
 
-export function buildRoute(terminalNodeId: number, indexes: CaseIndexes): RouteState {
+export function buildRoute(terminalNodeId: number, indexes: CaseIndexes, correctTerminalNodeIds: number[] = [terminalNodeId]): RouteState {
+  const correctTerminalSet = new Set(correctTerminalNodeIds.length ? correctTerminalNodeIds : [terminalNodeId]);
   const nodePath = [terminalNodeId];
   const edgePath: number[] = [];
   let current = indexes.nodesById.get(terminalNodeId);
@@ -107,7 +112,8 @@ export function buildRoute(terminalNodeId: number, indexes: CaseIndexes): RouteS
       childEdges,
       routeEdgeId: edgeId,
       nextRouteEdgeId: edgePath[edgeIndex + 1] ?? null,
-      decisionIndex: decisions.length
+      decisionIndex: decisions.length,
+      correctTerminalSet
     });
     if (collapsedDecision) {
       decisions.push(collapsedDecision.decision);
@@ -115,12 +121,32 @@ export function buildRoute(terminalNodeId: number, indexes: CaseIndexes): RouteS
       return;
     }
 
-    const options: BranchOption[] = childEdges.map((edge, optionIndex) => ({
-      label: CHOICE_LABELS[optionIndex] ?? `${optionIndex + 1}`,
-      edgeId: edge.id,
-      toNodeId: childNodeForEdge(edge, startNodeId, indexes),
-      isCorrect: edge.id === edgeId
-    }));
+    const nearbyCollapsedDecision = buildCollapsedNearbyDecision({
+      indexes,
+      node,
+      childEdges,
+      routeEdgeId: edgeId,
+      nextRouteEdgeId: edgePath[edgeIndex + 1] ?? null,
+      decisionIndex: decisions.length,
+      correctTerminalSet
+    });
+    if (nearbyCollapsedDecision) {
+      decisions.push(nearbyCollapsedDecision.decision);
+      nearbyCollapsedDecision.skipNodeIds.forEach((nodeId) => skipDecisionNodeIds.add(nodeId));
+      return;
+    }
+
+    const options: BranchOption[] = childEdges.map((edge, optionIndex) => {
+      const toNodeId = childNodeForEdge(edge, startNodeId, indexes);
+      const matchingTerminalNodeIds = matchingCorrectTerminalNodeIds(toNodeId, indexes, correctTerminalSet);
+      return {
+        label: CHOICE_LABELS[optionIndex] ?? `${optionIndex + 1}`,
+        edgeId: edge.id,
+        toNodeId,
+        isCorrect: matchingTerminalNodeIds.length > 0,
+        correctTerminalNodeIds: matchingTerminalNodeIds
+      };
+    });
     decisions.push({
       index: decisions.length,
       nodeId: startNodeId,
@@ -166,13 +192,34 @@ function appendRoutePoints(
   setTotal(total);
 }
 
-function buildCollapsedRightLowerLobeDecision({
+function matchingCorrectTerminalNodeIds(nodeId: number, indexes: CaseIndexes, correctTerminalSet: Set<number>): number[] {
+  return terminalDescendantNodeIds(nodeId, indexes).filter((terminalNodeId) => correctTerminalSet.has(terminalNodeId));
+}
+
+function terminalDescendantNodeIds(nodeId: number, indexes: CaseIndexes): number[] {
+  const node = indexes.nodesById.get(nodeId);
+  if (!node) {
+    return [];
+  }
+  const childEdges = indexes.childEdgesByNode.get(nodeId) ?? [];
+  if (node.kind === "terminal" || childEdges.length === 0) {
+    return node.kind === "terminal" ? [node.id] : [];
+  }
+  const terminalNodeIds: number[] = [];
+  childEdges.forEach((edge) => {
+    terminalNodeIds.push(...terminalDescendantNodeIds(childNodeForEdge(edge, nodeId, indexes), indexes));
+  });
+  return terminalNodeIds;
+}
+
+function buildCollapsedNearbyDecision({
   indexes,
   node,
   childEdges,
   routeEdgeId,
   nextRouteEdgeId,
-  decisionIndex
+  decisionIndex,
+  correctTerminalSet
 }: {
   indexes: CaseIndexes;
   node: AirwayNode;
@@ -180,6 +227,68 @@ function buildCollapsedRightLowerLobeDecision({
   routeEdgeId: number;
   nextRouteEdgeId: number | null;
   decisionIndex: number;
+  correctTerminalSet: Set<number>;
+}): CollapsedDecision | null {
+  const collapse = NEARBY_DECISION_COLLAPSES.find((candidate) => candidate.parentNodeId === node.id);
+  if (!collapse) {
+    return null;
+  }
+
+  const continuationEdge = childEdges.find((edge) => edge.id === collapse.viaEdgeId);
+  if (!continuationEdge || childNodeForEdge(continuationEdge, node.id, indexes) !== collapse.childNodeId) {
+    return null;
+  }
+
+  const childEdgesToCollapse = indexes.childEdgesByNode.get(collapse.childNodeId) ?? [];
+  if (childEdgesToCollapse.length < 2) {
+    return null;
+  }
+
+  const parentOptionEdges = childEdges.filter((edge) => edge.id !== continuationEdge.id);
+  const optionEdges = [...parentOptionEdges, ...childEdgesToCollapse];
+  const correctEdgeId = routeEdgeId === continuationEdge.id && nextRouteEdgeId != null ? nextRouteEdgeId : routeEdgeId;
+  const options: BranchOption[] = optionEdges.map((edge, optionIndex) => {
+    const fromNodeId = parentOptionEdges.includes(edge) ? node.id : collapse.childNodeId;
+    const toNodeId = childNodeForEdge(edge, fromNodeId, indexes);
+    const matchingTerminalNodeIds = matchingCorrectTerminalNodeIds(toNodeId, indexes, correctTerminalSet);
+    return {
+      label: CHOICE_LABELS[optionIndex] ?? `${optionIndex + 1}`,
+      edgeId: edge.id,
+      toNodeId,
+      isCorrect: matchingTerminalNodeIds.length > 0,
+      pathEdgeIds: parentOptionEdges.includes(edge) ? [edge.id] : [continuationEdge.id, edge.id],
+      correctTerminalNodeIds: matchingTerminalNodeIds
+    };
+  });
+
+  return {
+    decision: {
+      index: decisionIndex,
+      nodeId: node.id,
+      nodeRas: node.ras,
+      routeEdgeId: correctEdgeId,
+      options
+    },
+    skipNodeIds: [collapse.childNodeId]
+  };
+}
+
+function buildCollapsedRightLowerLobeDecision({
+  indexes,
+  node,
+  childEdges,
+  routeEdgeId,
+  nextRouteEdgeId,
+  decisionIndex,
+  correctTerminalSet
+}: {
+  indexes: CaseIndexes;
+  node: AirwayNode;
+  childEdges: AirwayEdge[];
+  routeEdgeId: number;
+  nextRouteEdgeId: number | null;
+  decisionIndex: number;
+  correctTerminalSet: Set<number>;
 }): CollapsedDecision | null {
   const rmlEdge = childEdges.find((edge) => labelMatches(edge, ["RML bronchus origin", "RML bronchus", "RML"]));
   const rllOriginEdge = childEdges.find((edge) => labelMatches(edge, ["RLL bronchus origin", "RLL bronchus", "RLL"]));
@@ -202,13 +311,19 @@ function buildCollapsedRightLowerLobeDecision({
     [basalEdge.id, [rllOriginEdge.id, basalEdge.id]]
   ]);
   const correctEdgeId = routeEdgeId === rllOriginEdge.id && nextRouteEdgeId != null ? nextRouteEdgeId : routeEdgeId;
-  const options: BranchOption[] = optionEdges.map((edge, optionIndex) => ({
-    label: CHOICE_LABELS[optionIndex] ?? `${optionIndex + 1}`,
-    edgeId: edge.id,
-    toNodeId: childNodeForEdge(edge, edge === rmlEdge ? node.id : rllSplitNodeId, indexes),
-    isCorrect: edge.id === correctEdgeId,
-    pathEdgeIds: pathByEdgeId.get(edge.id)
-  }));
+  const options: BranchOption[] = optionEdges.map((edge, optionIndex) => {
+    const fromNodeId = edge === rmlEdge ? node.id : rllSplitNodeId;
+    const toNodeId = childNodeForEdge(edge, fromNodeId, indexes);
+    const matchingTerminalNodeIds = matchingCorrectTerminalNodeIds(toNodeId, indexes, correctTerminalSet);
+    return {
+      label: CHOICE_LABELS[optionIndex] ?? `${optionIndex + 1}`,
+      edgeId: edge.id,
+      toNodeId,
+      isCorrect: matchingTerminalNodeIds.length > 0,
+      pathEdgeIds: pathByEdgeId.get(edge.id),
+      correctTerminalNodeIds: matchingTerminalNodeIds
+    };
+  });
 
   return {
     decision: {

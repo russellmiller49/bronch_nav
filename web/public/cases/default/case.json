@@ -71046,5 +71046,88 @@
     ],
     "maxRadiusMm": 10.3754,
     "mode": "residual"
-  }
+  },
+  "noduleTargets": [
+    {
+      "id": "beginner",
+      "label": "Beginner nodule",
+      "targetRas": [
+        42.1812,
+        130.03,
+        -250.132
+      ],
+      "initialTerminalNodeId": 227,
+      "correctTerminalNodeIds": [
+        147,
+        155,
+        227,
+        228,
+        371,
+        390,
+        391,
+        404
+      ],
+      "noduleAsset": {
+        "assetId": "beginner_102266_tumor",
+        "residualRaw": "beginner_nodule_residual_int16.raw",
+        "alphaRaw": "beginner_nodule_alpha_uint8.raw",
+        "residualRawType": "int16",
+        "alphaRawType": "uint8",
+        "sizeXyz": [
+          96,
+          95,
+          24
+        ],
+        "spacingXyzMm": [
+          0.742188,
+          0.742188,
+          2.5
+        ],
+        "centroidIndexXyz": [
+          45.28231,
+          45.595898,
+          11.217232
+        ],
+        "maxRadiusMm": 25.9871,
+        "mode": "residual"
+      }
+    },
+    {
+      "id": "advanced",
+      "label": "Advanced nodule",
+      "targetRas": [
+        42.1812,
+        130.03,
+        -250.132
+      ],
+      "initialTerminalNodeId": 227,
+      "correctTerminalNodeIds": [
+        227
+      ],
+      "noduleAsset": {
+        "assetId": "lung_nodule_1",
+        "residualRaw": "nodule_residual_int16.raw",
+        "alphaRaw": "nodule_alpha_uint8.raw",
+        "residualRawType": "int16",
+        "alphaRawType": "uint8",
+        "sizeXyz": [
+          56,
+          64,
+          36
+        ],
+        "spacingXyzMm": [
+          0.693359,
+          0.693359,
+          1.0
+        ],
+        "centroidIndexXyz": [
+          27.021901,
+          32.085375,
+          17.61804
+        ],
+        "maxRadiusMm": 10.3754,
+        "mode": "residual"
+      }
+    }
+  ]
 }

@@ -1,20 +1,32 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import type {
   AirwayAnatomyLabel,
   AirwayCandidateLabel,
   AirwayEdge,
   Decision,
   LoadedCase,
+  LoadedNoduleAsset,
+  NoduleTarget,
+  NoduleTargetLocation,
   RouteState,
   ScopeAdjustment,
   ScopeAdjustments,
-  Vec3
+  Vec3,
+  WebCase
 } from "./types";
 import { loadCase } from "./caseLoader";
 import { clamp, type CtViewMode, type PlaneKind } from "./geometry";
-import { buildRoute, createIndexes } from "./route";
+import { buildRoute, createIndexes, type CaseIndexes } from "./route";
 import { buildAirwayFrame, CtPane, type CandidateOverlay } from "./components/CtPane";
-import { BronchoscopeView, DEFAULT_SCOPE_ADJUSTMENT, normalizeScopeAdjustment, type ScopeCameraPose } from "./components/BronchoscopeView";
+import {
+  BronchoscopeView,
+  DEFAULT_SCOPE_ADJUSTMENT,
+  MAX_SCOPE_CAMERA_BACK_MM,
+  MIN_SCOPE_CAMERA_BACK_MM,
+  normalizeScopeAdjustment,
+  scopeCameraBackLimitMm,
+  type ScopeCameraPose
+} from "./components/BronchoscopeView";
 import { AirwayMap } from "./components/AirwayMap";
 
 type SliceOffsets = Record<PlaneKind, number>;
@@ -27,11 +39,16 @@ const DRIVE_LOOK_AHEAD_MM = 34;
 const DRIVE_SHORT_SEGMENT_BACK_FRACTION = 0.7;
 const DRIVE_PARENT_CLEARANCE_MM = 3;
 const DEFAULT_DRIVE_SPEED_MM_PER_SEC = 22;
+const TARGET_PATH_RADIUS_MARGIN_MM = 8;
 
 export function App() {
   const [loadedCase, setLoadedCase] = useState<LoadedCase | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeTargetId, setActiveTargetId] = useState<string | null>(null);
+  const [targetLocationIndex, setTargetLocationIndex] = useState(0);
   const [selectedEndpointId, setSelectedEndpointId] = useState<number | null>(null);
+  const [remainingCorrectTerminalIds, setRemainingCorrectTerminalIds] = useState<number[]>([]);
+  const [committedPathEdgeIds, setCommittedPathEdgeIds] = useState<number[]>([]);
   const [currentDecisionIndex, setCurrentDecisionIndex] = useState(0);
   const [selectedEdgeId, setSelectedEdgeId] = useState<number | null>(null);
   const [showRoute, setShowRoute] = useState(false);
@@ -42,6 +59,7 @@ export function App() {
   const [scopeDebugMode, setScopeDebugMode] = useState(false);
   const [scopeAdjustments, setScopeAdjustments] = useState<ScopeAdjustments>({});
   const [calibrationStatus, setCalibrationStatus] = useState("");
+  const [targetPlacementStatus, setTargetPlacementStatus] = useState("");
   const [mode, setMode] = useState<"setup" | "practice">("practice");
   const [driveDistanceMm, setDriveDistanceMm] = useState(0);
   const [driveRunning, setDriveRunning] = useState(false);
@@ -51,20 +69,48 @@ export function App() {
   useEffect(() => {
     loadCase()
       .then((nextCase) => {
+        const targets = noduleTargetsForCase(nextCase.metadata);
+        const initialTarget = targets[0];
         setLoadedCase(nextCase);
-        setSelectedEndpointId(nextCase.metadata.initial.snappedTerminalNodeId);
+        setActiveTargetId(initialTarget?.id ?? null);
+        setSelectedEndpointId(initialTarget?.initialTerminalNodeId ?? nextCase.metadata.initial.snappedTerminalNodeId);
         setScopeAdjustments(parseScopeCalibration(nextCase.metadata.scopeCalibration));
       })
       .catch((loadError: unknown) => setError(loadError instanceof Error ? loadError.message : String(loadError)));
   }, []);
 
+  const noduleTargets = useMemo(() => (loadedCase ? noduleTargetsForCase(loadedCase.metadata) : []), [loadedCase]);
+  const activeTarget = useMemo(
+    () => noduleTargets.find((target) => target.id === activeTargetId) ?? noduleTargets[0] ?? null,
+    [activeTargetId, noduleTargets]
+  );
+  const activeNoduleAsset = activeTarget && loadedCase ? (loadedCase.noduleAssets[activeTarget.id] ?? loadedCase.noduleAsset) : (loadedCase?.noduleAsset ?? null);
   const indexes = useMemo(() => (loadedCase ? createIndexes(loadedCase.metadata) : null), [loadedCase]);
+  const activeTargetLocations = useMemo(
+    () => (activeTarget && indexes ? targetLocationsForTarget(activeTarget, indexes) : []),
+    [activeTarget, indexes]
+  );
+  const activeTargetLocation = activeTargetLocations[Math.min(targetLocationIndex, Math.max(activeTargetLocations.length - 1, 0))] ?? null;
+  const activeTargetCorrectTerminalIds = useMemo(
+    () => activeTargetLocation?.correctTerminalNodeIds.filter((nodeId, index, nodeIds) => nodeIds.indexOf(nodeId) === index) ?? [],
+    [activeTargetLocation]
+  );
+  const activePathTerminalIds = useMemo(() => {
+    const narrowed = remainingCorrectTerminalIds.filter((nodeId) => activeTargetCorrectTerminalIds.includes(nodeId));
+    return narrowed.length ? narrowed : activeTargetCorrectTerminalIds;
+  }, [remainingCorrectTerminalIds, activeTargetCorrectTerminalIds]);
+  const correctTerminalKey = activePathTerminalIds.join(",");
+  const centerlineRoutes = useMemo(
+    () => (indexes ? activePathTerminalIds.map((terminalNodeId) => buildRoute(terminalNodeId, indexes, activePathTerminalIds)) : []),
+    [indexes, activePathTerminalIds, correctTerminalKey]
+  );
+  const centerlineRoutePaths = useMemo(() => centerlineRoutes.map((candidateRoute) => candidateRoute.routePoints), [centerlineRoutes]);
   const route = useMemo<RouteState | null>(() => {
     if (!selectedEndpointId || !indexes) {
       return null;
     }
-    return buildRoute(selectedEndpointId, indexes);
-  }, [selectedEndpointId, indexes]);
+    return buildRoute(selectedEndpointId, indexes, activePathTerminalIds);
+  }, [activePathTerminalIds, correctTerminalKey, selectedEndpointId, indexes]);
 
   const currentDecision: Decision | null = route?.decisions[currentDecisionIndex] ?? null;
   const currentStopDistanceMm = route ? stopDistanceForDecision(route, currentDecision) : 0;
@@ -79,12 +125,10 @@ export function App() {
   }, [route, driveDistanceMm, currentDecision]);
   const driveMapBucket = Math.round(driveDistanceMm / 6);
   const mapDriveRas = useMemo<Vec3 | null>(() => (route ? pointAtRouteDistance(route, driveMapBucket * 6) : null), [route, driveMapBucket]);
-  const selectedNode = loadedCase && selectedEndpointId ? loadedCase.metadata.airway.nodes.find((node) => node.id === selectedEndpointId) : null;
-  const selectedEndpointAnatomy = anatomyDisplayName(selectedNode?.anatomy);
-  const noduleRas = selectedNode?.ras ?? loadedCase?.metadata.initial.snappedTerminalRas;
+  const noduleRas = activeTargetLocation?.targetRas ?? activeTarget?.targetRas ?? loadedCase?.metadata.initial.snappedTerminalRas;
   const focusRas = drivePose?.cameraRas ?? visibleDecision?.nodeRas ?? noduleRas ?? loadedCase?.metadata.initial.targetRas;
   const selectedOption = visibleDecision?.options.find((option) => option.edgeId === selectedEdgeId) ?? null;
-  const correctOption = visibleDecision?.options.find((option) => option.isCorrect) ?? null;
+  const correctOptions = visibleDecision?.options.filter((option) => option.isCorrect) ?? [];
   const airwayFrame = useMemo(() => (route && focusRas ? buildAirwayFrame(route.routePoints, focusRas) : null), [route, focusRas]);
   const hasCandidateLabels = loadedCase?.metadata.airway.edges.some((edge) => edge.candidateLabels?.length) ?? false;
   const candidateOverlays = useMemo(
@@ -93,12 +137,33 @@ export function App() {
   );
 
   useEffect(() => {
+    if (!activeTarget) {
+      return;
+    }
+    setTargetLocationIndex(0);
+    setTargetPlacementStatus("");
+  }, [activeTarget?.id]);
+
+  useEffect(() => {
+    if (targetLocationIndex < activeTargetLocations.length) {
+      return;
+    }
+    setTargetLocationIndex(0);
+  }, [activeTargetLocations.length, targetLocationIndex]);
+
+  useEffect(() => {
+    if (!activeTargetLocation) {
+      return;
+    }
+    setSelectedEndpointId(activeTargetLocation.initialTerminalNodeId);
+    setRemainingCorrectTerminalIds(activeTargetLocation.correctTerminalNodeIds);
+    setCommittedPathEdgeIds([]);
     setCurrentDecisionIndex(0);
     setSelectedEdgeId(null);
     setDriveDistanceMm(0);
     setDriveRunning(false);
     setSliceOffsets(ZERO_SLICE_OFFSETS);
-  }, [selectedEndpointId]);
+  }, [activeTargetLocation?.id]);
 
   useEffect(() => {
     setSliceOffsets(ZERO_SLICE_OFFSETS);
@@ -164,13 +229,33 @@ export function App() {
     );
   }
 
-  const highlightEdges = buildHighlights(indexes.edgesById, visibleDecision, selectedEdgeId, selectedOption?.isCorrect ?? false, correctOption?.edgeId ?? null);
+  const takenPathEdgeIds = driveRouteComplete ? route.edgePath : committedPathEdgeIds;
+  const highlightEdges = buildHighlights(
+    indexes.edgesById,
+    visibleDecision,
+    selectedEdgeId,
+    selectedOption?.isCorrect ?? false,
+    correctOptions.map((option) => option.edgeId),
+    takenPathEdgeIds
+  );
   const progressLabel = route.decisions.length ? `${Math.min(currentDecisionIndex + 1, route.decisions.length)} / ${route.decisions.length}` : "complete";
   const scopeAdjustmentKey = visibleDecision ? String(visibleDecision.nodeId) : "drive";
   const scopeAdjustment = visibleDecision ? normalizeScopeAdjustment(scopeAdjustments[scopeAdjustmentKey]) : DEFAULT_SCOPE_ADJUSTMENT;
+  const scopeCameraBackMaxMm = visibleDecision ? Math.max(1, Math.floor(scopeCameraBackLimitMm(visibleDecision, indexes))) : MAX_SCOPE_CAMERA_BACK_MM;
+  const scopeCameraBackMinMm = Math.min(MIN_SCOPE_CAMERA_BACK_MM, scopeCameraBackMaxMm);
+  const visibleScopeAdjustment = visibleDecision
+    ? {
+        ...scopeAdjustment,
+        cameraBackMm: clamp(scopeAdjustment.cameraBackMm, scopeCameraBackMinMm, scopeCameraBackMaxMm)
+      }
+    : scopeAdjustment;
   const driveTargetDistanceMm = Math.max(currentStopDistanceMm, 0);
   const driveProgressPercent = route.totalLengthMm > 0 ? Math.round((driveDistanceMm / route.totalLengthMm) * 100) : 0;
   const scopeStatusLabel = visibleDecision ? `Decision ${visibleDecision.index + 1}` : driveRouteComplete ? "Complete" : driveRunning ? "Driving" : "Paused";
+  const targetOrdinal = activeTargetLocation ? Math.min(targetLocationIndex + 1, activeTargetLocations.length) : 0;
+  const targetCount = activeTargetLocations.length;
+  const pathCount = activePathTerminalIds.length;
+  const pathsNarrowed = pathCount > 0 && pathCount < activeTargetCorrectTerminalIds.length;
 
   const chooseOption = (edgeId: number) => {
     setDriveRunning(false);
@@ -178,12 +263,26 @@ export function App() {
   };
 
   const continueDrive = () => {
+    if (selectedOption?.isCorrect) {
+      const nextTerminals = uniqueNodeIds(selectedOption.correctTerminalNodeIds?.length ? selectedOption.correctTerminalNodeIds : activePathTerminalIds);
+      const nextEndpointId = selectedEndpointId && nextTerminals.includes(selectedEndpointId) ? selectedEndpointId : nextTerminals[0];
+      setRemainingCorrectTerminalIds(nextTerminals);
+      if (nextEndpointId != null) {
+        setSelectedEndpointId(nextEndpointId);
+      }
+      setCommittedPathEdgeIds((current) => uniqueNodeIds([...current, ...(selectedOption.pathEdgeIds?.length ? selectedOption.pathEdgeIds : [selectedOption.edgeId])]));
+    }
     setSelectedEdgeId(null);
     setCurrentDecisionIndex((value) => Math.min(value + 1, route.decisions.length));
     setDriveRunning(true);
   };
 
   const resetPractice = () => {
+    if (activeTargetLocation) {
+      setSelectedEndpointId(activeTargetLocation.initialTerminalNodeId);
+      setRemainingCorrectTerminalIds(activeTargetLocation.correctTerminalNodeIds);
+    }
+    setCommittedPathEdgeIds([]);
     setCurrentDecisionIndex(0);
     setSelectedEdgeId(null);
     setDriveDistanceMm(0);
@@ -228,16 +327,54 @@ export function App() {
     setCtZoom((value) => clamp(Number((value + delta).toFixed(2)), 1, 4));
   };
 
-  const moveEndpoint = (delta: number) => {
-    const terminals = loadedCase.metadata.airway.terminalNodeIds;
-    const current = selectedEndpointId ?? loadedCase.metadata.initial.snappedTerminalNodeId;
-    const index = Math.max(0, terminals.indexOf(current));
-    const nextIndex = (index + delta + terminals.length) % terminals.length;
-    setSelectedEndpointId(terminals[nextIndex]);
+  const moveTarget = (delta: number) => {
+    if (!activeTargetLocations.length) {
+      return;
+    }
+    const nextIndex = (targetLocationIndex + delta + activeTargetLocations.length) % activeTargetLocations.length;
+    setTargetLocationIndex(nextIndex);
+    setTargetPlacementStatus(`Target ${nextIndex + 1}`);
   };
 
-  const resetEndpoint = () => {
-    setSelectedEndpointId(loadedCase.metadata.initial.snappedTerminalNodeId);
+  const resetTarget = () => {
+    setTargetLocationIndex(0);
+    if (activeTargetLocation) {
+      setSelectedEndpointId(activeTargetLocation.initialTerminalNodeId);
+      setRemainingCorrectTerminalIds(activeTargetLocation.correctTerminalNodeIds);
+    }
+    setCommittedPathEdgeIds([]);
+    setCurrentDecisionIndex(0);
+    setSelectedEdgeId(null);
+    setDriveDistanceMm(0);
+    setDriveRunning(false);
+    setSliceOffsets(ZERO_SLICE_OFFSETS);
+    setTargetPlacementStatus("Target 1");
+  };
+
+  const surpriseTarget = () => {
+    if (!activeTargetLocations.length) {
+      return;
+    }
+    let nextIndex = Math.floor(Math.random() * activeTargetLocations.length);
+    if (activeTargetLocations.length > 1 && nextIndex === targetLocationIndex) {
+      nextIndex = (nextIndex + 1) % activeTargetLocations.length;
+    }
+    setTargetLocationIndex(nextIndex);
+    setTargetPlacementStatus(`Target ${nextIndex + 1}`);
+  };
+
+  const snapTargetToRas = (ras: Vec3) => {
+    const nextIndex = nearestTargetLocationIndex(activeTargetLocations, ras);
+    if (nextIndex == null) {
+      return;
+    }
+    setTargetLocationIndex(nextIndex);
+    setTargetPlacementStatus(`Snapped to Target ${nextIndex + 1}`);
+  };
+
+  const startNoduleDrag = (event: DragEvent<HTMLDivElement>) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-bronch-nodule", activeTarget?.id ?? "nodule");
   };
 
   const debugMoveDecision = (delta: number) => {
@@ -255,7 +392,7 @@ export function App() {
     if (!visibleDecision) {
       return;
     }
-    const nextAdjustment = normalizeScopeAdjustment(updater(scopeAdjustment));
+    const nextAdjustment = normalizeScopeAdjustment(updater(visibleScopeAdjustment));
     setScopeAdjustments((current) => {
       return {
         ...current,
@@ -344,19 +481,43 @@ export function App() {
       <aside className="trainer-panel">
         <div className="panel-section">
           <span className="section-label">Target</span>
-          <h1>Snap nodule, then choose the airway.</h1>
+          {noduleTargets.length > 1 && (
+            <div className="segmented target-selector">
+              {noduleTargets.map((target) => (
+                <button key={target.id} className={target.id === activeTarget?.id ? "active" : ""} onClick={() => setActiveTargetId(target.id)}>
+                  {target.label.replace(" nodule", "")}
+                </button>
+              ))}
+            </div>
+          )}
+          <h1>{activeTarget?.label ?? "Nodule target"}</h1>
           <p>
-            Endpoint {selectedEndpointId} is active{selectedEndpointAnatomy ? ` (${selectedEndpointAnatomy})` : ""}. Drag the red target in the airway map to pick a different terminal branch.
+            Target {targetOrdinal} of {targetCount}. {pathCount} accepted {pathCount === 1 ? "path" : "paths"}
+            {pathsNarrowed ? " from this branch" : ""}.
           </p>
-          <div className="inline-actions">
-            <button className="secondary-action" onClick={() => moveEndpoint(-1)}>
-              Prev endpoint
-            </button>
-            <button className="secondary-action" onClick={() => moveEndpoint(1)}>
-              Next endpoint
+          <div className="nodule-picker">
+            <NoduleThumbnail asset={activeNoduleAsset} label={activeTarget?.label ?? "Nodule"} onDragStart={startNoduleDrag} />
+            <button className="secondary-action surprise-action" onClick={surpriseTarget} disabled={activeTargetLocations.length < 2}>
+              Surprise me
             </button>
           </div>
-          <button className="secondary-action wide" onClick={resetEndpoint}>
+          {targetPlacementStatus && <div className="target-snap-status">{targetPlacementStatus}</div>}
+          <div className="path-list" aria-label="Accepted paths for this target">
+            {activePathTerminalIds.map((nodeId, index) => (
+              <span key={nodeId} className={`path-pill ${nodeId === selectedEndpointId ? "path-pill-active" : ""}`}>
+                Path {index + 1}
+              </span>
+            ))}
+          </div>
+          <div className="inline-actions">
+            <button className="secondary-action" onClick={() => moveTarget(-1)} disabled={activeTargetLocations.length < 2}>
+              Prev target
+            </button>
+            <button className="secondary-action" onClick={() => moveTarget(1)} disabled={activeTargetLocations.length < 2}>
+              Next target
+            </button>
+          </div>
+          <button className="secondary-action wide" onClick={resetTarget}>
             Reset target
           </button>
         </div>
@@ -443,9 +604,9 @@ export function App() {
             <p className="debug-help">Drag A/B/C labels in the bronchoscope pane. Use these controls to advance/back up the camera and correct yaw, pitch, roll, and field of view for the current branch.</p>
             <DebugSlider
               label="Back"
-              value={scopeAdjustment.cameraBackMm}
-              min={4}
-              max={45}
+              value={visibleScopeAdjustment.cameraBackMm}
+              min={scopeCameraBackMinMm}
+              max={scopeCameraBackMaxMm}
               step={1}
               suffix="mm"
               onChange={(value) => updateCurrentScopeAdjustment((current) => ({ ...current, cameraBackMm: value }))}
@@ -524,7 +685,7 @@ export function App() {
                   );
                 })}
               </div>
-              <Feedback selectedEdgeId={selectedEdgeId} selectedOptionCorrect={selectedOption?.isCorrect ?? null} />
+              <Feedback selectedEdgeId={selectedEdgeId} selectedOptionCorrect={selectedOption?.isCorrect ?? null} remainingPathCount={selectedOption?.correctTerminalNodeIds?.length ?? 0} />
               <button className="primary-action" disabled={selectedEdgeId == null} onClick={continueDrive}>
                 Drive on
               </button>
@@ -567,8 +728,8 @@ export function App() {
             volume={loadedCase.volume}
             focusRas={focusRas}
             noduleRas={noduleRas}
-            noduleAsset={loadedCase.noduleAsset}
-            routePoints={route.routePoints}
+            noduleAsset={activeNoduleAsset}
+            routePaths={centerlineRoutePaths}
             airwayFrame={airwayFrame}
             sliceOffset={sliceOffsets.axial}
             showRoute={showRoute}
@@ -577,6 +738,7 @@ export function App() {
             zoom={ctZoom}
             onSliceScroll={handleSliceScroll}
             onZoomChange={nudgeZoom}
+            onTargetDrop={snapTargetToRas}
           />
           <CtPane
             plane="coronal"
@@ -585,8 +747,8 @@ export function App() {
             volume={loadedCase.volume}
             focusRas={focusRas}
             noduleRas={noduleRas}
-            noduleAsset={loadedCase.noduleAsset}
-            routePoints={route.routePoints}
+            noduleAsset={activeNoduleAsset}
+            routePaths={centerlineRoutePaths}
             airwayFrame={airwayFrame}
             sliceOffset={sliceOffsets.coronal}
             showRoute={showRoute}
@@ -595,6 +757,7 @@ export function App() {
             zoom={ctZoom}
             onSliceScroll={handleSliceScroll}
             onZoomChange={nudgeZoom}
+            onTargetDrop={snapTargetToRas}
           />
           <CtPane
             plane="sagittal"
@@ -603,8 +766,8 @@ export function App() {
             volume={loadedCase.volume}
             focusRas={focusRas}
             noduleRas={noduleRas}
-            noduleAsset={loadedCase.noduleAsset}
-            routePoints={route.routePoints}
+            noduleAsset={activeNoduleAsset}
+            routePaths={centerlineRoutePaths}
             airwayFrame={airwayFrame}
             sliceOffset={sliceOffsets.sagittal}
             showRoute={showRoute}
@@ -613,6 +776,7 @@ export function App() {
             zoom={ctZoom}
             onSliceScroll={handleSliceScroll}
             onZoomChange={nudgeZoom}
+            onTargetDrop={snapTargetToRas}
           />
         </div>
         <div className="right-stack">
@@ -625,7 +789,7 @@ export function App() {
             showDecisionLabels={Boolean(visibleDecision)}
             statusLabel={scopeStatusLabel}
             debugMode={scopeDebugMode}
-            adjustment={scopeAdjustment}
+            adjustment={visibleScopeAdjustment}
             onAdjustmentChange={(nextAdjustment) => updateCurrentScopeAdjustment(() => nextAdjustment)}
           />
           <AirwayMap
@@ -635,14 +799,224 @@ export function App() {
             decision={visibleDecision}
             candidateOverlays={candidateOverlays}
             selectedEndpointId={selectedEndpointId ?? loadedCase.metadata.initial.snappedTerminalNodeId}
+            selectableEndpointIds={activePathTerminalIds}
+            noduleRas={noduleRas}
+            noduleRadiusMm={activeNoduleAsset?.metadata.maxRadiusMm ?? null}
             selectedEdgeId={selectedEdgeId}
+            committedEdgeIds={takenPathEdgeIds}
             driveRas={mapDriveRas}
-            onEndpointChange={setSelectedEndpointId}
           />
         </div>
       </section>
     </main>
   );
+}
+
+function noduleTargetsForCase(webCase: WebCase): NoduleTarget[] {
+  if (webCase.noduleTargets?.length) {
+    return webCase.noduleTargets.map((target) => ({
+      ...target,
+      correctTerminalNodeIds: uniqueNodeIds(target.correctTerminalNodeIds.length ? target.correctTerminalNodeIds : [target.initialTerminalNodeId])
+    }));
+  }
+  return webCase.noduleAsset
+    ? [
+        {
+          id: "advanced",
+          label: "Advanced nodule",
+          targetRas: webCase.initial.targetRas,
+          initialTerminalNodeId: webCase.initial.snappedTerminalNodeId,
+          correctTerminalNodeIds: [webCase.initial.snappedTerminalNodeId],
+          noduleAsset: webCase.noduleAsset
+        }
+      ]
+    : [];
+}
+
+function targetLocationsForTarget(target: NoduleTarget, indexes: CaseIndexes): NoduleTargetLocation[] {
+  if (target.locations?.length) {
+    return target.locations.map((location, index) => ({
+      ...location,
+      id: location.id || `${target.id}-target-${index + 1}`,
+      label: location.label || `Target ${index + 1}`,
+      correctTerminalNodeIds: uniqueNodeIds(location.correctTerminalNodeIds.length ? location.correctTerminalNodeIds : [location.initialTerminalNodeId])
+    }));
+  }
+
+  const anchorNodeIds = orderedTerminalNodeIdsForTargets(indexes, target.initialTerminalNodeId);
+  const baseNode = indexes.nodesById.get(target.initialTerminalNodeId);
+  const anchorOffset: Vec3 = baseNode
+    ? [target.targetRas[0] - baseNode.ras[0], target.targetRas[1] - baseNode.ras[1], target.targetRas[2] - baseNode.ras[2]]
+    : [0, 0, 0];
+  const radiusMm = target.noduleAsset.maxRadiusMm ?? 0;
+  const useNearbyAcceptedPaths = target.correctTerminalNodeIds.length > 1;
+
+  return (anchorNodeIds.length ? anchorNodeIds : [target.initialTerminalNodeId]).map((anchorNodeId, index) => {
+    const anchorNode = indexes.nodesById.get(anchorNodeId);
+    const targetRas: Vec3 = anchorNode
+      ? [anchorNode.ras[0] + anchorOffset[0], anchorNode.ras[1] + anchorOffset[1], anchorNode.ras[2] + anchorOffset[2]]
+      : target.targetRas;
+    const nearbyTerminalNodeIds = useNearbyAcceptedPaths ? terminalNodeIdsNearTarget(indexes, targetRas, radiusMm + TARGET_PATH_RADIUS_MARGIN_MM) : [];
+    const correctTerminalNodeIds = uniqueNodeIds([anchorNodeId, ...nearbyTerminalNodeIds]);
+    const initialTerminalNodeId = correctTerminalNodeIds.includes(anchorNodeId) ? anchorNodeId : (correctTerminalNodeIds[0] ?? anchorNodeId);
+    return {
+      id: `${target.id}-target-${index + 1}`,
+      label: `Target ${index + 1}`,
+      targetRas,
+      initialTerminalNodeId,
+      correctTerminalNodeIds
+    };
+  });
+}
+
+function orderedTerminalNodeIdsForTargets(indexes: CaseIndexes, preferredInitialNodeId: number): number[] {
+  const terminalNodes = Array.from(indexes.nodesById.values()).filter((node) => node.kind === "terminal");
+  const remaining = new Map(terminalNodes.map((node) => [node.id, node]));
+  const ordered: number[] = [];
+  const initialNode = remaining.get(preferredInitialNodeId) ?? terminalNodes[0];
+  if (initialNode) {
+    ordered.push(initialNode.id);
+    remaining.delete(initialNode.id);
+  }
+
+  while (remaining.size) {
+    let bestNodeId: number | null = null;
+    let bestDistance = -1;
+    remaining.forEach((node, nodeId) => {
+      const nearestChosenDistance = Math.min(
+        ...ordered.map((chosenNodeId) => {
+          const chosenNode = indexes.nodesById.get(chosenNodeId);
+          return chosenNode ? distanceBetween(node.ras, chosenNode.ras) : 0;
+        })
+      );
+      if (nearestChosenDistance > bestDistance || (nearestChosenDistance === bestDistance && (bestNodeId == null || nodeId < bestNodeId))) {
+        bestDistance = nearestChosenDistance;
+        bestNodeId = nodeId;
+      }
+    });
+    if (bestNodeId == null) {
+      break;
+    }
+    ordered.push(bestNodeId);
+    remaining.delete(bestNodeId);
+  }
+
+  return ordered;
+}
+
+function terminalNodeIdsNearTarget(indexes: CaseIndexes, targetRas: Vec3, radiusMm: number): number[] {
+  const terminalNodeIds: { nodeId: number; distanceMm: number }[] = [];
+  indexes.nodesById.forEach((node) => {
+    if (node.kind !== "terminal") {
+      return;
+    }
+    const distanceMm = distanceBetween(node.ras, targetRas);
+    if (distanceMm <= radiusMm) {
+      terminalNodeIds.push({ nodeId: node.id, distanceMm });
+    }
+  });
+  return terminalNodeIds.sort((a, b) => a.distanceMm - b.distanceMm).map((item) => item.nodeId);
+}
+
+function nearestTargetLocationIndex(locations: NoduleTargetLocation[], ras: Vec3): number | null {
+  let bestIndex: number | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  locations.forEach((location, index) => {
+    const distance = distanceBetween(location.targetRas, ras);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
+function uniqueNodeIds(nodeIds: number[]): number[] {
+  return nodeIds.filter((nodeId, index) => Number.isFinite(nodeId) && nodeIds.indexOf(nodeId) === index);
+}
+
+function NoduleThumbnail({
+  asset,
+  label,
+  onDragStart
+}: {
+  asset: LoadedNoduleAsset | null;
+  label: string;
+  onDragStart: (event: DragEvent<HTMLDivElement>) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+    drawNoduleThumbnail(canvas, asset);
+  }, [asset]);
+
+  return (
+    <div className="nodule-thumbnail" draggable onDragStart={onDragStart} role="img" aria-label={`${label} preview`}>
+      <canvas ref={canvasRef} width={88} height={88} />
+      <span>{label.replace(" nodule", "")}</span>
+    </div>
+  );
+}
+
+function drawNoduleThumbnail(canvas: HTMLCanvasElement, asset: LoadedNoduleAsset | null) {
+  const width = 88;
+  const height = 88;
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return;
+  }
+  const image = ctx.createImageData(width, height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      image.data[offset] = 9;
+      image.data[offset + 1] = 14;
+      image.data[offset + 2] = 18;
+      image.data[offset + 3] = 255;
+    }
+  }
+
+  if (asset) {
+    const [sx, sy, sz] = asset.metadata.sizeXyz;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const i = Math.round((x / Math.max(width - 1, 1)) * (sx - 1));
+        const j = Math.round((y / Math.max(height - 1, 1)) * (sy - 1));
+        let bestAlpha = 0;
+        let residualHu = 0;
+        for (let k = 0; k < sz; k += 1) {
+          const assetOffset = k * sx * sy + j * sx + i;
+          const alpha = asset.alpha[assetOffset] ?? 0;
+          if (alpha > bestAlpha) {
+            bestAlpha = alpha;
+            residualHu = asset.residual[assetOffset] ?? 0;
+          }
+        }
+        if (bestAlpha > 0) {
+          const offset = (y * width + x) * 4;
+          const alpha = bestAlpha / 255;
+          const density = clamp((residualHu + 900) / 1800, 0, 1);
+          image.data[offset] = Math.round(130 + density * 110);
+          image.data[offset + 1] = Math.round(54 + density * 78);
+          image.data[offset + 2] = Math.round(66 + density * 58);
+          image.data[offset + 3] = Math.round(80 + alpha * 175);
+        }
+      }
+    }
+  }
+
+  ctx.putImageData(image, 0, 0);
+  ctx.save();
+  ctx.strokeStyle = "#41515d";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+  ctx.restore();
 }
 
 function RouteCompleteCelebration() {
@@ -864,16 +1238,23 @@ function buildCandidateOverlays(currentDecision: Decision, edgesById: Map<number
 
 function Feedback({
   selectedEdgeId,
-  selectedOptionCorrect
+  selectedOptionCorrect,
+  remainingPathCount
 }: {
   selectedEdgeId: number | null;
   selectedOptionCorrect: boolean | null;
+  remainingPathCount: number;
 }) {
   if (selectedEdgeId == null) {
     return <div className="feedback neutral">Pick A, B, or C from the bronchoscope view.</div>;
   }
   if (selectedOptionCorrect) {
-    return <div className="feedback correct">Correct. The matching airway is highlighted on the CT views.</div>;
+    const pathCount = Math.max(remainingPathCount, 1);
+    return (
+      <div className="feedback correct">
+        Correct. {pathCount} accepted {pathCount === 1 ? "path remains" : "paths remain"} from here.
+      </div>
+    );
   }
   return <div className="feedback wrong">Not this branch. The correct airway is shown in amber for comparison.</div>;
 }
@@ -883,14 +1264,23 @@ function buildHighlights(
   currentDecision: Decision | null,
   selectedEdgeId: number | null,
   selectedCorrect: boolean,
-  correctEdgeId: number | null
+  correctEdgeIds: number[],
+  committedEdgeIds: number[]
 ) {
   const highlights: { edge: AirwayEdge; color: string; width: number }[] = [];
+  committedEdgeIds.forEach((edgeId) => {
+    const edge = edgesById.get(edgeId);
+    if (edge) {
+      highlights.push({ edge, color: "#2ef082", width: 4.2 });
+    }
+  });
   if (selectedEdgeId != null) {
     pushOptionHighlights(highlights, edgesById, currentDecision, selectedEdgeId, selectedCorrect ? "#2ef082" : "#ff5964", 4.5);
   }
-  if (selectedEdgeId != null && !selectedCorrect && correctEdgeId != null) {
-    pushOptionHighlights(highlights, edgesById, currentDecision, correctEdgeId, "#ffd43a", 4);
+  if (selectedEdgeId != null && !selectedCorrect) {
+    correctEdgeIds.forEach((correctEdgeId) => {
+      pushOptionHighlights(highlights, edgesById, currentDecision, correctEdgeId, "#ffd43a", 4);
+    });
   }
   return highlights;
 }
