@@ -2,6 +2,34 @@
   "schema": "bronchoedu_scope_calibration/v1",
   "caseId": "synthetic-target",
   "adjustments": {
+    "2": {
+      "cameraBackMm": 11,
+      "lookAheadMm": 8,
+      "yawDeg": 2,
+      "pitchDeg": 8,
+      "rollDeg": 12,
+      "fovDeg": 84,
+      "labelOffsets": {
+        "B": {
+          "x": 32,
+          "y": -43
+        }
+      }
+    },
+    "3": {
+      "cameraBackMm": 11,
+      "lookAheadMm": 30,
+      "yawDeg": 0,
+      "pitchDeg": 5,
+      "rollDeg": -81,
+      "fovDeg": 84,
+      "labelOffsets": {
+        "B": {
+          "x": -103,
+          "y": 9
+        }
+      }
+    },
     "4": {
       "cameraBackMm": 15,
       "lookAheadMm": 8,
@@ -61,13 +89,31 @@
       "fovDeg": 84,
       "labelOffsets": {}
     },
-    "23": {
-      "cameraBackMm": 6,
-      "lookAheadMm": 35,
-      "yawDeg": -7,
-      "pitchDeg": 8,
-      "rollDeg": -15,
+    "13": {
+      "cameraBackMm": 9,
+      "lookAheadMm": 30,
+      "yawDeg": 0,
+      "pitchDeg": 0,
+      "rollDeg": 60,
       "fovDeg": 84,
+      "labelOffsets": {}
+    },
+    "14": {
+      "cameraBackMm": 10,
+      "lookAheadMm": 30,
+      "yawDeg": 0,
+      "pitchDeg": 0,
+      "rollDeg": 32,
+      "fovDeg": 84,
+      "labelOffsets": {}
+    },
+    "23": {
+      "cameraBackMm": 5,
+      "lookAheadMm": 8,
+      "yawDeg": -29,
+      "pitchDeg": -3,
+      "rollDeg": -19,
+      "fovDeg": 82,
       "labelOffsets": {
         "B": {
           "x": -14,
@@ -97,6 +143,42 @@
         }
       }
     },
+    "28": {
+      "cameraBackMm": 4,
+      "lookAheadMm": 8,
+      "yawDeg": -1,
+      "pitchDeg": 4,
+      "rollDeg": 0,
+      "fovDeg": 84,
+      "labelOffsets": {
+        "B": {
+          "x": -44,
+          "y": -134
+        },
+        "A": {
+          "x": -34,
+          "y": 13
+        }
+      }
+    },
+    "29": {
+      "cameraBackMm": 4,
+      "lookAheadMm": 30,
+      "yawDeg": -5,
+      "pitchDeg": 0,
+      "rollDeg": -25,
+      "fovDeg": 88,
+      "labelOffsets": {}
+    },
+    "46": {
+      "cameraBackMm": 5,
+      "lookAheadMm": 8,
+      "yawDeg": -14,
+      "pitchDeg": 0,
+      "rollDeg": -84,
+      "fovDeg": 57,
+      "labelOffsets": {}
+    },
     "47": {
       "cameraBackMm": 8,
       "lookAheadMm": 30,
@@ -117,6 +199,20 @@
         "B": {
           "x": -31,
           "y": 70
+        }
+      }
+    },
+    "57": {
+      "cameraBackMm": 7,
+      "lookAheadMm": 30,
+      "yawDeg": -2,
+      "pitchDeg": 0,
+      "rollDeg": -16,
+      "fovDeg": 95,
+      "labelOffsets": {
+        "A": {
+          "x": 7,
+          "y": 37
         }
       }
     },
@@ -151,6 +247,48 @@
       "rollDeg": 134,
       "fovDeg": 84,
       "labelOffsets": {}
+    },
+    "108": {
+      "cameraBackMm": 6,
+      "lookAheadMm": 46,
+      "yawDeg": 17,
+      "pitchDeg": 2,
+      "rollDeg": -7,
+      "fovDeg": 77,
+      "labelOffsets": {
+        "B": {
+          "x": -97,
+          "y": -31
+        }
+      }
+    },
+    "109": {
+      "cameraBackMm": 5,
+      "lookAheadMm": 30,
+      "yawDeg": 0,
+      "pitchDeg": 0,
+      "rollDeg": 0,
+      "fovDeg": 84,
+      "labelOffsets": {
+        "A": {
+          "x": -1,
+          "y": -33
+        }
+      }
+    },
+    "153": {
+      "cameraBackMm": 13,
+      "lookAheadMm": 8,
+      "yawDeg": 0,
+      "pitchDeg": 10,
+      "rollDeg": 0,
+      "fovDeg": 60,
+      "labelOffsets": {
+        "B": {
+          "x": -27,
+          "y": -129
+        }
+      }
     },
     "156": {
       "cameraBackMm": 4,
@@ -188,7 +326,30 @@
           "y": -2
         }
       }
+    },
+    "187": {
+      "cameraBackMm": 5,
+      "lookAheadMm": 30,
+      "yawDeg": 3,
+      "pitchDeg": 3,
+      "rollDeg": 0,
+      "fovDeg": 84,
+      "labelOffsets": {
+        "A": {
+          "x": -42,
+          "y": 44
+        }
+      }
+    },
+    "360": {
+      "cameraBackMm": 5,
+      "lookAheadMm": 30,
+      "yawDeg": 0,
+      "pitchDeg": 3,
+      "rollDeg": -27,
+      "fovDeg": 84,
+      "labelOffsets": {}
     }
   },
-  "updatedAt": "2026-05-08T05:11:59.186Z"
+  "updatedAt": "2026-05-08T12:04:32.921Z"
 }

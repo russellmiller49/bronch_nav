@@ -6,15 +6,29 @@ import { fileURLToPath } from "node:url";
 
 const SCOPE_CALIBRATION_SCHEMA = "bronchoedu_scope_calibration/v1";
 const scopeCalibrationPath = fileURLToPath(new URL("./public/cases/default/scope_calibration.json", import.meta.url));
+const enableScopeDebug = process.env.VITE_ENABLE_SCOPE_DEBUG !== "false";
+const appBasePath = normalizeBasePath(process.env.VITE_BASE_PATH);
 
 export default defineConfig({
+  base: appBasePath,
   plugins: [react(), scopeCalibrationWriter()],
+  define: {
+    __APP_BASE_PATH__: JSON.stringify(appBasePath),
+    __ENABLE_SCOPE_DEBUG__: JSON.stringify(enableScopeDebug)
+  },
   server: {
     fs: {
       strict: true
     }
   }
 });
+
+function normalizeBasePath(value: string | undefined) {
+  if (!value) {
+    return "/";
+  }
+  return value.endsWith("/") ? value : `${value}/`;
+}
 
 function scopeCalibrationWriter() {
   return {

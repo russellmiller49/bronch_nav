@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import type { Decision, RouteState, Vec3, WebCase } from "../types";
 import { rasToScene } from "../geometry";
 import { childNodeForEdge, type CaseIndexes, optionPathPoints, orientedEdgePoints } from "../route";
 import type { CandidateOverlay } from "./CtPane";
+
+declare const __APP_BASE_PATH__: string;
 
 interface MapLabel {
   key: string;
@@ -29,9 +32,15 @@ interface AirwayMapProps {
   driveRas?: Vec3 | null;
   onEndpointChange?: (nodeId: number) => void;
   meshUrl?: string;
+  noduleMeshUrl?: string | null;
 }
 
 const surfaceGeometryCache = new Map<string, Promise<THREE.BufferGeometry>>();
+const noduleGeometryCache = new Map<string, Promise<THREE.BufferGeometry>>();
+
+function appAssetUrl(path: string) {
+  return new URL(path, new URL(__APP_BASE_PATH__, window.location.origin)).toString();
+}
 
 export function AirwayMap({
   webCase,
@@ -47,7 +56,8 @@ export function AirwayMap({
   committedEdgeIds = [],
   driveRas = null,
   onEndpointChange,
-  meshUrl = "/cases/default/airway_surface.stl"
+  meshUrl = appAssetUrl("cases/default/airway_surface.stl"),
+  noduleMeshUrl = null
 }: AirwayMapProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const onEndpointChangeRef = useRef(onEndpointChange);
@@ -62,6 +72,7 @@ export function AirwayMap({
     if (!mount) {
       return;
     }
+    const mountEl = mount;
     mount.innerHTML = "";
 
     let cancelled = false;
@@ -72,6 +83,18 @@ export function AirwayMap({
 
     const scene = new THREE.Scene();
     const camera = fitOverviewCamera(webCase, mount.clientWidth, mount.clientHeight);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.copy(airwaySceneCenter(webCase));
+    controls.enableDamping = false;
+    controls.enablePan = true;
+    controls.enableRotate = true;
+    controls.enableZoom = true;
+    controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+    controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+    controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+    controls.touches.ONE = THREE.TOUCH.ROTATE;
+    controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+    controls.update();
     scene.add(new THREE.AmbientLight(0xc6f6ff, 0.85));
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.7);
     keyLight.position.set(180, 240, 320);
@@ -89,7 +112,35 @@ export function AirwayMap({
     }
     addEndpointDots(scene, webCase, 0.78);
     addTargetEndpointDots(scene, indexes, selectableEndpointIds.length ? selectableEndpointIds : [selectedEndpointId], selectedEndpointId);
-    addNodule(scene, noduleRas, noduleRadiusMm);
+
+    const renderScene = () => {
+      updateLabels();
+      renderer.render(scene, camera);
+    };
+    controls.addEventListener("change", renderScene);
+
+    const addFallbackNodule = () => {
+      addNodule(scene, noduleRas, noduleRadiusMm);
+      renderScene();
+    };
+
+    if (noduleMeshUrl) {
+      loadNoduleGeometry(noduleMeshUrl)
+        .then((geometry) => {
+          if (cancelled) {
+            return;
+          }
+          addNoduleMesh(scene, geometry, noduleRas);
+          renderScene();
+        })
+        .catch(() => {
+          if (!cancelled) {
+            addFallbackNodule();
+          }
+        });
+    } else {
+      addFallbackNodule();
+    }
 
     loadAirwaySurface(meshUrl)
       .then((geometry) => {
@@ -109,10 +160,10 @@ export function AirwayMap({
           })
         );
         scene.add(mesh);
-        renderer.render(scene, camera);
+        renderScene();
       })
       .catch(() => {
-        renderer.render(scene, camera);
+        renderScene();
       });
 
     const terminalScreenPoints = () => {
@@ -133,16 +184,16 @@ export function AirwayMap({
         .filter(Boolean) as { nodeId: number; x: number; y: number }[];
     };
 
-    const updateLabels = () => {
+    function updateLabels() {
       if (!decision) {
         setLabels([]);
         return;
       }
-      const decisionScreen = projectToScreen(decision.nodeRas, camera, mount);
+      const decisionScreen = projectToScreen(decision.nodeRas, camera, mountEl);
       const next: MapLabel[] = decision.options.map((option, index) => {
         const labelPoint = pointAlong(optionPathPoints(decision, option, indexes), 28);
-        const branchScreen = projectToScreen(labelPoint, camera, mount);
-        const labelScreen = labelNearDecision(decisionScreen, branchScreen, index, decision.options.length, mount);
+        const branchScreen = projectToScreen(labelPoint, camera, mountEl);
+        const labelScreen = labelNearDecision(decisionScreen, branchScreen, index, decision.options.length, mountEl);
         const isSelected = selectedEdgeId === option.edgeId;
         const state: MapLabel["state"] = !isSelected ? "neutral" : option.isCorrect ? "correct" : "wrong";
         return {
@@ -159,18 +210,18 @@ export function AirwayMap({
           return;
         }
         const labelPoint = pointAlong(orientedEdgePoints(candidate.edge, node.id, childNodeForEdge(candidate.edge, node.id, indexes)), 58);
-        const branchScreen = projectToScreen(labelPoint, camera, mount);
+        const branchScreen = projectToScreen(labelPoint, camera, mountEl);
         const spread = (index - (candidateOverlays.length - 1) / 2) * 16;
         next.push({
           key: `candidate-${candidate.edge.id}-${candidate.label}`,
           label: `${candidate.label} ${candidate.score.toFixed(2)}`,
-          x: clampScreen(branchScreen.x, 42, mount.clientWidth - 42),
-          y: clampScreen(branchScreen.y + spread, 18, mount.clientHeight - 18),
+          x: clampScreen(branchScreen.x, 42, mountEl.clientWidth - 42),
+          y: clampScreen(branchScreen.y + spread, 18, mountEl.clientHeight - 18),
           state: "candidate"
         });
       });
       setLabels(next);
-    };
+    }
 
     let dragging = false;
     const pickEndpoint = (event: PointerEvent) => {
@@ -216,8 +267,9 @@ export function AirwayMap({
       camera.position.copy(nextCamera.position);
       camera.quaternion.copy(nextCamera.quaternion);
       camera.updateProjectionMatrix();
-      updateLabels();
-      renderer.render(scene, camera);
+      controls.target.copy(airwaySceneCenter(webCase));
+      controls.update();
+      renderScene();
     };
 
     if (onEndpointChange) {
@@ -226,11 +278,12 @@ export function AirwayMap({
       renderer.domElement.addEventListener("pointerup", onPointerUp);
     }
     window.addEventListener("resize", onResize);
-    updateLabels();
-    renderer.render(scene, camera);
+    renderScene();
 
     return () => {
       cancelled = true;
+      controls.removeEventListener("change", renderScene);
+      controls.dispose();
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
       renderer.domElement.removeEventListener("pointermove", onPointerMove);
       renderer.domElement.removeEventListener("pointerup", onPointerUp);
@@ -239,13 +292,13 @@ export function AirwayMap({
       renderer.forceContextLoss();
       mount.innerHTML = "";
     };
-  }, [webCase, indexes, route, decision, candidateOverlays, selectedEndpointId, selectableEndpointIds, noduleRas, noduleRadiusMm, selectedEdgeId, committedEdgeIds, driveRas, onEndpointChange, meshUrl]);
+  }, [webCase, indexes, route, decision, candidateOverlays, selectedEndpointId, selectableEndpointIds, noduleRas, noduleRadiusMm, selectedEdgeId, committedEdgeIds, driveRas, onEndpointChange, meshUrl, noduleMeshUrl]);
 
   return (
     <section className="map-panel">
       <div className="pane-chrome">
         <span>3D airway path</span>
-        <span>accepted paths</span>
+        <span>drag rotate / scroll zoom</span>
       </div>
       <div className="map-render-wrap">
         <div ref={mountRef} className="map-render" />
@@ -287,7 +340,47 @@ function loadAirwaySurface(url: string): Promise<THREE.BufferGeometry> {
   return promise;
 }
 
+function loadNoduleGeometry(url: string): Promise<THREE.BufferGeometry> {
+  const cached = noduleGeometryCache.get(url);
+  if (cached) {
+    return cached;
+  }
+  const promise = new STLLoader().loadAsync(url).then((geometry) => {
+    const positions = geometry.getAttribute("position");
+    for (let i = 0; i < positions.count; i += 1) {
+      const l = positions.getX(i);
+      const p = positions.getY(i);
+      const s = positions.getZ(i);
+      positions.setXYZ(i, -l, s, p);
+    }
+    positions.needsUpdate = true;
+    geometry.deleteAttribute("normal");
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.center();
+    geometry.computeBoundingSphere();
+    return geometry;
+  });
+  noduleGeometryCache.set(url, promise);
+  return promise;
+}
+
 function fitOverviewCamera(webCase: WebCase, width: number, height: number): THREE.OrthographicCamera {
+  const { center, span } = airwaySceneBounds(webCase);
+  const aspect = width / Math.max(height, 1);
+  const camera = new THREE.OrthographicCamera((-span * aspect) / 2, (span * aspect) / 2, span / 2, -span / 2, -1000, 1000);
+  camera.up.set(0, 1, 0);
+  camera.position.set(center.x, center.y + span * 0.04, center.z - span * 1.08);
+  camera.lookAt(center);
+  camera.updateProjectionMatrix();
+  return camera;
+}
+
+function airwaySceneCenter(webCase: WebCase): THREE.Vector3 {
+  return airwaySceneBounds(webCase).center;
+}
+
+function airwaySceneBounds(webCase: WebCase) {
   const points = webCase.airway.nodes.map((node) => rasToScene(node.ras));
   const minX = Math.min(...points.map((point) => point[0]));
   const maxX = Math.max(...points.map((point) => point[0]));
@@ -295,17 +388,10 @@ function fitOverviewCamera(webCase: WebCase, width: number, height: number): THR
   const maxY = Math.max(...points.map((point) => point[1]));
   const minZ = Math.min(...points.map((point) => point[2]));
   const maxZ = Math.max(...points.map((point) => point[2]));
-  const centerX = (minX + maxX) * 0.5;
-  const centerY = (minY + maxY) * 0.5;
-  const centerZ = (minZ + maxZ) * 0.5;
-  const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ) * 1.55;
-  const aspect = width / Math.max(height, 1);
-  const camera = new THREE.OrthographicCamera((-span * aspect) / 2, (span * aspect) / 2, span / 2, -span / 2, -1000, 1000);
-  camera.up.set(0, 1, 0);
-  camera.position.set(centerX, centerY + span * 0.04, centerZ - span * 1.08);
-  camera.lookAt(centerX, centerY, centerZ);
-  camera.updateProjectionMatrix();
-  return camera;
+  return {
+    center: new THREE.Vector3((minX + maxX) * 0.5, (minY + maxY) * 0.5, (minZ + maxZ) * 0.5),
+    span: Math.max(maxX - minX, maxY - minY, maxZ - minZ) * 1.55
+  };
 }
 
 function addAirwayLines(scene: THREE.Scene, webCase: WebCase, color: number, opacity: number) {
@@ -440,6 +526,21 @@ function addNodule(scene: THREE.Scene, ras: Vec3, radiusMm: number | null) {
   );
   marker.position.copy(toVector3(ras));
   scene.add(marker);
+}
+
+function addNoduleMesh(scene: THREE.Scene, geometry: THREE.BufferGeometry, ras: Vec3) {
+  const mesh = new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({
+      color: 0xff5f6d,
+      roughness: 0.42,
+      metalness: 0.02,
+      transparent: true,
+      opacity: 0.94
+    })
+  );
+  mesh.position.copy(toVector3(ras));
+  scene.add(mesh);
 }
 
 function addCurrentMarker(scene: THREE.Scene, ras: Vec3) {

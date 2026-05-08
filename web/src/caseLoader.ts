@@ -1,6 +1,8 @@
 import type { AirwayCandidateLabel, AirwayCandidatePayload, LoadedCase, LoadedNoduleAsset, NoduleAssetMetadata, WebCase } from "./types";
 
-export async function loadCase(caseUrl = "/cases/default/case.json"): Promise<LoadedCase> {
+declare const __APP_BASE_PATH__: string;
+
+export async function loadCase(caseUrl = appAssetUrl("cases/default/case.json")): Promise<LoadedCase> {
   const metadata = (await fetch(caseUrl).then((response) => {
     if (!response.ok) {
       throw new Error(`Failed to load case metadata: ${response.status}`);
@@ -31,6 +33,10 @@ export async function loadCase(caseUrl = "/cases/default/case.json"): Promise<Lo
   }
 
   return { metadata, volume: new Uint8Array(buffer), noduleAsset, noduleAssets };
+}
+
+function appAssetUrl(path: string) {
+  return new URL(path, new URL(__APP_BASE_PATH__, window.location.origin)).toString();
 }
 
 async function fetchScopeCalibrationSidecar(metadata: WebCase, caseUrl: string) {

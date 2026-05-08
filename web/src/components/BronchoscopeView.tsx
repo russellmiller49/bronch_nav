@@ -5,12 +5,20 @@ import type { Decision, ScopeAdjustment, Vec3 } from "../types";
 import { add, normalize, rasToScene, scale, subtract } from "../geometry";
 import { type CaseIndexes, optionPathPoints } from "../route";
 
+declare const __APP_BASE_PATH__: string;
+
 interface ScopeLabel {
   label: string;
   x: number;
   y: number;
   state: "neutral" | "correct" | "wrong" | "correct-unselected";
   visible: boolean;
+}
+
+interface CompassMarker {
+  label: "R" | "L" | "A" | "P";
+  x: number;
+  y: number;
 }
 
 export interface ScopeCameraPose {
@@ -25,6 +33,10 @@ interface BronchoscopeViewProps {
   drivePose?: ScopeCameraPose | null;
   applyDriveAdjustment?: boolean;
   showDecisionLabels?: boolean;
+  showCompass?: boolean;
+  showTumor?: boolean;
+  noduleRas?: Vec3 | null;
+  noduleMeshUrl?: string | null;
   statusLabel?: string;
   debugMode?: boolean;
   adjustment?: ScopeAdjustment;
@@ -43,10 +55,15 @@ export const DEFAULT_SCOPE_ADJUSTMENT: ScopeAdjustment = {
 };
 
 const geometryCache = new Map<string, Promise<THREE.BufferGeometry>>();
+const noduleGeometryCache = new Map<string, Promise<THREE.BufferGeometry>>();
 export const MIN_SCOPE_CAMERA_BACK_MM = 4;
 export const MAX_SCOPE_CAMERA_BACK_MM = 45;
 const SHORT_SEGMENT_BACK_FRACTION = 0.7;
 const PARENT_CLEARANCE_MM = 3;
+
+function appAssetUrl(path: string) {
+  return new URL(path, new URL(__APP_BASE_PATH__, window.location.origin)).toString();
+}
 
 export function normalizeScopeAdjustment(adjustment?: Partial<ScopeAdjustment>): ScopeAdjustment {
   return {
@@ -79,11 +96,15 @@ export function BronchoscopeView({
   drivePose = null,
   applyDriveAdjustment = false,
   showDecisionLabels = true,
+  showCompass = false,
+  showTumor = false,
+  noduleRas = null,
+  noduleMeshUrl = null,
   statusLabel,
   debugMode = false,
   adjustment: rawAdjustment,
   onAdjustmentChange,
-  meshUrl = "/cases/default/airway_surface.stl"
+  meshUrl = appAssetUrl("cases/default/airway_surface.stl")
 }: BronchoscopeViewProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -91,9 +112,13 @@ export function BronchoscopeView({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const headlightRef = useRef<THREE.PointLight | null>(null);
   const materialRef = useRef<THREE.ShaderMaterial | null>(null);
+  const tumorMeshRef = useRef<THREE.Mesh | null>(null);
+  const tumorMaterialRef = useRef<THREE.MeshStandardMaterial | null>(null);
   const labelsVisibleRef = useRef(false);
+  const compassVisibleRef = useRef(false);
   const renderRef = useRef<() => void>(() => {});
   const [labels, setLabels] = useState<ScopeLabel[]>([]);
+  const [compassMarkers, setCompassMarkers] = useState<CompassMarker[]>([]);
   const [meshStatus, setMeshStatus] = useState<"loading" | "ready" | "error">("loading");
   const adjustment = normalizeScopeAdjustment(rawAdjustment);
 
@@ -116,6 +141,13 @@ export function BronchoscopeView({
       labelsVisibleRef.current = false;
       setLabels([]);
     }
+    if (showCompass) {
+      compassVisibleRef.current = true;
+      updateCompass(camera, mount, setCompassMarkers);
+    } else if (compassVisibleRef.current) {
+      compassVisibleRef.current = false;
+      setCompassMarkers([]);
+    }
     renderer.render(scene, camera);
   };
 
@@ -126,7 +158,9 @@ export function BronchoscopeView({
     }
     mount.innerHTML = "";
     setLabels([]);
+    setCompassMarkers([]);
     labelsVisibleRef.current = false;
+    compassVisibleRef.current = false;
     setMeshStatus("loading");
 
     let cancelled = false;
@@ -189,14 +223,66 @@ export function BronchoscopeView({
       materialRef.current?.dispose();
       renderer.dispose();
       renderer.forceContextLoss();
+      tumorMaterialRef.current?.dispose();
       rendererRef.current = null;
       sceneRef.current = null;
       cameraRef.current = null;
       headlightRef.current = null;
       materialRef.current = null;
+      tumorMeshRef.current = null;
+      tumorMaterialRef.current = null;
       mount.innerHTML = "";
     };
   }, [meshUrl]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) {
+      return;
+    }
+
+    if (tumorMeshRef.current) {
+      scene.remove(tumorMeshRef.current);
+      tumorMeshRef.current = null;
+    }
+    tumorMaterialRef.current?.dispose();
+    tumorMaterialRef.current = null;
+
+    if (!showTumor || !noduleMeshUrl || !noduleRas) {
+      renderRef.current();
+      return;
+    }
+
+    let cancelled = false;
+    loadNoduleGeometry(noduleMeshUrl)
+      .then((geometry) => {
+        if (cancelled || !sceneRef.current) {
+          return;
+        }
+        const material = createScopeTumorMaterial();
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.copy(toVector3(noduleRas));
+        mesh.renderOrder = 2;
+        tumorMeshRef.current = mesh;
+        tumorMaterialRef.current = material;
+        sceneRef.current.add(mesh);
+        renderRef.current();
+      })
+      .catch(() => {
+        renderRef.current();
+      });
+
+    return () => {
+      cancelled = true;
+      const currentScene = sceneRef.current;
+      if (tumorMeshRef.current && currentScene) {
+        currentScene.remove(tumorMeshRef.current);
+      }
+      tumorMeshRef.current = null;
+      tumorMaterialRef.current?.dispose();
+      tumorMaterialRef.current = null;
+    };
+  }, [showTumor, noduleMeshUrl, noduleRas?.[0], noduleRas?.[1], noduleRas?.[2]]);
 
   useEffect(() => {
     renderRef.current();
@@ -205,6 +291,7 @@ export function BronchoscopeView({
     indexes,
     selectedEdgeId,
     showDecisionLabels,
+    showCompass,
     adjustment.cameraBackMm,
     adjustment.lookAheadMm,
     adjustment.yawDeg,
@@ -275,6 +362,16 @@ export function BronchoscopeView({
             {item.label}
           </span>
         ))}
+        {showCompass && compassMarkers.length > 0 && (
+          <div className="scope-compass" aria-label="Patient orientation overlay">
+            <span className="scope-compass-ring" />
+            {compassMarkers.map((item) => (
+              <span key={item.label} className={`scope-compass-marker scope-compass-${item.label.toLowerCase()}`} style={{ left: `${item.x}px`, top: `${item.y}px` }}>
+                {item.label}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -301,6 +398,31 @@ function loadAirwayGeometry(url: string): Promise<THREE.BufferGeometry> {
     return geometry;
   });
   geometryCache.set(url, promise);
+  return promise;
+}
+
+function loadNoduleGeometry(url: string): Promise<THREE.BufferGeometry> {
+  const cached = noduleGeometryCache.get(url);
+  if (cached) {
+    return cached;
+  }
+  const promise = new STLLoader().loadAsync(url).then((geometry) => {
+    const positions = geometry.getAttribute("position");
+    for (let i = 0; i < positions.count; i += 1) {
+      const l = positions.getX(i);
+      const p = positions.getY(i);
+      const s = positions.getZ(i);
+      positions.setXYZ(i, -l, s, p);
+    }
+    positions.needsUpdate = true;
+    geometry.deleteAttribute("normal");
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.center();
+    geometry.computeBoundingSphere();
+    return geometry;
+  });
+  noduleGeometryCache.set(url, promise);
   return promise;
 }
 
@@ -364,6 +486,17 @@ function createBronchoscopyMaterial(): THREE.ShaderMaterial {
         gl_FragColor = vec4(color, 1.0);
       }
     `
+  });
+}
+
+function createScopeTumorMaterial(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color: 0xb83d5f,
+    roughness: 0.48,
+    metalness: 0,
+    emissive: 0x26040b,
+    emissiveIntensity: 0.18,
+    side: THREE.DoubleSide
   });
 }
 
@@ -468,6 +601,33 @@ function updateLabels(
     };
   });
   setLabels(labels);
+}
+
+function updateCompass(camera: THREE.PerspectiveCamera, mount: HTMLElement, setCompassMarkers: (markers: CompassMarker[]) => void) {
+  const centerX = Math.max(58, mount.clientWidth - 68);
+  const centerY = Math.max(58, mount.clientHeight - 66);
+  const radius = 34;
+  const cameraRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+  const cameraUp = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+  const patientDirections: { label: CompassMarker["label"]; direction: THREE.Vector3 }[] = [
+    { label: "R", direction: toVector3([1, 0, 0]).normalize() },
+    { label: "L", direction: toVector3([-1, 0, 0]).normalize() },
+    { label: "A", direction: toVector3([0, 1, 0]).normalize() },
+    { label: "P", direction: toVector3([0, -1, 0]).normalize() }
+  ];
+
+  setCompassMarkers(
+    patientDirections.map((item) => {
+      const xProjection = item.direction.dot(cameraRight);
+      const yProjection = item.direction.dot(cameraUp);
+      const length = Math.max(Math.hypot(xProjection, yProjection), 1e-4);
+      return {
+        label: item.label,
+        x: centerX + (xProjection / length) * radius,
+        y: centerY - (yProjection / length) * radius
+      };
+    })
+  );
 }
 
 function incomingDirection(nodeId: number, indexes: CaseIndexes): Vec3 {

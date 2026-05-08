@@ -5,6 +5,8 @@ const NON_VISIBLE_TERMINAL_MEAN_RADIUS_MM = 0.35;
 const NON_VISIBLE_TERMINAL_LENGTH_MM = 6;
 
 const NEARBY_DECISION_COLLAPSES = [
+  { parentNodeId: 2, childNodeId: 6, viaEdgeId: 5 },
+  { parentNodeId: 46, childNodeId: 89, viaEdgeId: 88 },
   { parentNodeId: 92, childNodeId: 93, viaEdgeId: 91 }
 ] as const;
 
@@ -193,23 +195,12 @@ function appendRoutePoints(
 }
 
 function matchingCorrectTerminalNodeIds(nodeId: number, indexes: CaseIndexes, correctTerminalSet: Set<number>): number[] {
-  return terminalDescendantNodeIds(nodeId, indexes).filter((terminalNodeId) => correctTerminalSet.has(terminalNodeId));
-}
-
-function terminalDescendantNodeIds(nodeId: number, indexes: CaseIndexes): number[] {
-  const node = indexes.nodesById.get(nodeId);
-  if (!node) {
-    return [];
-  }
+  const matchingNodeIds: number[] = correctTerminalSet.has(nodeId) ? [nodeId] : [];
   const childEdges = indexes.childEdgesByNode.get(nodeId) ?? [];
-  if (node.kind === "terminal" || childEdges.length === 0) {
-    return node.kind === "terminal" ? [node.id] : [];
-  }
-  const terminalNodeIds: number[] = [];
   childEdges.forEach((edge) => {
-    terminalNodeIds.push(...terminalDescendantNodeIds(childNodeForEdge(edge, nodeId, indexes), indexes));
+    matchingNodeIds.push(...matchingCorrectTerminalNodeIds(childNodeForEdge(edge, nodeId, indexes), indexes, correctTerminalSet));
   });
-  return terminalNodeIds;
+  return matchingNodeIds.filter((matchingNodeId, index) => matchingNodeIds.indexOf(matchingNodeId) === index);
 }
 
 function buildCollapsedNearbyDecision({

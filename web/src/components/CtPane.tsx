@@ -35,6 +35,13 @@ export interface AirwayFrame {
   binormal: Vec3;
 }
 
+export interface TargetSurveyOverlay {
+  label: string;
+  ras: Vec3;
+  radiusMm?: number | null;
+  active?: boolean;
+}
+
 interface CtPaneProps {
   plane: PlaneKind;
   viewMode: CtViewMode;
@@ -44,13 +51,19 @@ interface CtPaneProps {
   noduleRas: Vec3;
   noduleAsset: LoadedNoduleAsset | null;
   routePaths: Vec3[][];
+  scopeTracePath: Vec3[];
   airwayFrame: AirwayFrame;
   sliceOffset: number;
+  sliceOffsetMin: number;
+  sliceOffsetMax: number;
   showRoute: boolean;
+  showScopeTrace: boolean;
   highlightEdges: HighlightEdge[];
   candidateOverlays: CandidateOverlay[];
+  targetSurveyOverlays?: TargetSurveyOverlay[];
   zoom: number;
   onSliceScroll: (plane: PlaneKind, delta: number) => void;
+  onSliceOffsetChange: (plane: PlaneKind, value: number) => void;
   onZoomChange: (delta: number) => void;
   onTargetDrop?: (ras: Vec3) => void;
 }
@@ -76,13 +89,19 @@ export function CtPane({
   noduleRas,
   noduleAsset,
   routePaths,
+  scopeTracePath,
   airwayFrame,
   sliceOffset,
+  sliceOffsetMin,
+  sliceOffsetMax,
   showRoute,
+  showScopeTrace,
   highlightEdges,
   candidateOverlays,
+  targetSurveyOverlays = [],
   zoom,
   onSliceScroll,
+  onSliceOffsetChange,
   onZoomChange,
   onTargetDrop
 }: CtPaneProps) {
@@ -130,15 +149,37 @@ export function CtPane({
     highlightEdges.forEach(({ edge, color, width }) => {
       drawPolyline(ctx, drawInfo, edge.pointsRas, color, width, 0.95);
     });
+    if (showScopeTrace) {
+      drawPolyline(ctx, drawInfo, scopeTracePath, "#29e47c", 2.6, 0.95);
+    }
     candidateOverlays.forEach(({ edge, label, score, color }) => {
       drawPolyline(ctx, drawInfo, edge.pointsRas, color, 1.7, 0.72);
       drawEdgeLabel(ctx, drawInfo, edge, `${label} ${score.toFixed(2)}`, color);
     });
-    drawMarker(ctx, drawInfo, focusRas, "#ffcc28", 5, "scope");
+    if (targetSurveyOverlays.length) {
+      drawTargetSurveyOverlays(ctx, drawInfo, targetSurveyOverlays);
+    }
     if (!noduleAsset) {
       drawMarker(ctx, drawInfo, noduleRas, "#ff5b68", 6, "target");
     }
-  }, [plane, viewMode, ct, volume, focusRas, noduleRas, noduleAsset, routePaths, airwayFrame, sliceOffset, showRoute, highlightEdges, candidateOverlays]);
+  }, [
+    plane,
+    viewMode,
+    ct,
+    volume,
+    focusRas,
+    noduleRas,
+    noduleAsset,
+    routePaths,
+    scopeTracePath,
+    airwayFrame,
+    sliceOffset,
+    showRoute,
+    showScopeTrace,
+    highlightEdges,
+    candidateOverlays,
+    targetSurveyOverlays
+  ]);
 
   const title = viewMode === "standard" ? STANDARD_TITLES[plane] : AIRWAY_TITLES[plane];
   const handleDragOver = (event: DragEvent<HTMLElement>) => {
@@ -180,6 +221,17 @@ export function CtPane({
       </div>
       <div className="ct-canvas-wrap">
         <canvas ref={canvasRef} className="ct-canvas" style={{ transform: `scale(${zoom})` }} />
+        <label className="slice-scrubber">
+          <input
+            type="range"
+            min={sliceOffsetMin}
+            max={sliceOffsetMax}
+            step={1}
+            value={sliceOffset}
+            aria-label={`${title} slice position`}
+            onChange={(event) => onSliceOffsetChange(plane, Number(event.currentTarget.value))}
+          />
+        </label>
       </div>
     </section>
   );
@@ -480,6 +532,60 @@ function drawMarker(ctx: CanvasRenderingContext2D, info: DrawInfo, ras: Vec3, co
   ctx.shadowBlur = 4;
   ctx.fillText(label, projected.x + radius + 4, projected.y - radius - 2);
   ctx.restore();
+}
+
+function drawTargetSurveyOverlays(ctx: CanvasRenderingContext2D, info: DrawInfo, overlays: TargetSurveyOverlay[]) {
+  if (info.mode !== "standard") {
+    return;
+  }
+  ctx.save();
+  ctx.font = "9px Inter, system-ui, sans-serif";
+  ctx.textBaseline = "middle";
+  overlays.forEach((overlay) => {
+    const projected = projectRasToPlane(overlay.ras, info.ct, info.plane);
+    if (projected.x < -32 || projected.y < -32 || projected.x > info.width + 32 || projected.y > info.height + 32) {
+      return;
+    }
+    const radius = targetSurveyRadiusPixels(info, overlay.radiusMm);
+    ctx.globalAlpha = overlay.active ? 0.56 : 0.32;
+    ctx.fillStyle = overlay.active ? "rgba(41, 228, 124, 0.24)" : "rgba(255, 91, 104, 0.22)";
+    ctx.strokeStyle = overlay.active ? "#29e47c" : "#ff8290";
+    ctx.lineWidth = overlay.active ? 1.8 : 1.1;
+    ctx.beginPath();
+    ctx.arc(projected.x, projected.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    const label = overlay.label;
+    const labelWidth = Math.ceil(ctx.measureText(label).width) + 6;
+    const labelHeight = 12;
+    const labelX = clamp(projected.x + radius * 0.35, 2, info.width - labelWidth - 2);
+    const labelY = clamp(projected.y - radius * 0.35 - labelHeight * 0.5, 2, info.height - labelHeight - 2);
+    ctx.globalAlpha = overlay.active ? 0.96 : 0.78;
+    ctx.fillStyle = overlay.active ? "#071710" : "#13080a";
+    roundedRect(ctx, labelX, labelY, labelWidth, labelHeight, 3);
+    ctx.fill();
+    ctx.strokeStyle = overlay.active ? "#29e47c" : "#ff8290";
+    ctx.lineWidth = 0.8;
+    roundedRect(ctx, labelX + 0.5, labelY + 0.5, labelWidth - 1, labelHeight - 1, 3);
+    ctx.stroke();
+    ctx.fillStyle = overlay.active ? "#ceffdf" : "#ffd4d9";
+    ctx.fillText(label, labelX + 3, labelY + labelHeight * 0.5 + 0.5);
+  });
+  ctx.restore();
+}
+
+function targetSurveyRadiusPixels(info: Extract<DrawInfo, { mode: "standard" }>, radiusMm: number | null | undefined) {
+  if (!radiusMm || !Number.isFinite(radiusMm)) {
+    return 5;
+  }
+  const spacing =
+    info.plane === "axial"
+      ? (info.ct.spacingXyzMm[0] + info.ct.spacingXyzMm[1]) * 0.5
+      : info.plane === "coronal"
+        ? (info.ct.spacingXyzMm[0] + info.ct.spacingXyzMm[2]) * 0.5
+        : (info.ct.spacingXyzMm[1] + info.ct.spacingXyzMm[2]) * 0.5;
+  return clamp(radiusMm / Math.max(spacing, 0.001), 5, 26);
 }
 
 function drawEdgeLabel(ctx: CanvasRenderingContext2D, info: DrawInfo, edge: AirwayEdge, label: string, color: string) {
