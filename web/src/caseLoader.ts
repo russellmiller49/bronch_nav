@@ -1,6 +1,9 @@
 import type { AirwayCandidateLabel, AirwayCandidatePayload, LoadedCase, LoadedNoduleAsset, NoduleAssetMetadata, WebCase } from "./types";
 
 declare const __APP_BASE_PATH__: string;
+declare const __ENABLE_SCOPE_DEBUG__: boolean;
+
+const ENABLE_AUTHORING_TOOLS = __ENABLE_SCOPE_DEBUG__;
 
 export async function loadCase(caseUrl = appAssetUrl("cases/default/case.json")): Promise<LoadedCase> {
   const metadata = (await fetch(caseUrl).then((response) => {
@@ -9,9 +12,11 @@ export async function loadCase(caseUrl = appAssetUrl("cases/default/case.json"))
     }
     return response.json();
   })) as WebCase;
-  const candidatePayload = await fetchCandidateSidecar(metadata, caseUrl);
-  if (candidatePayload) {
-    mergeCandidateLabels(metadata, candidatePayload);
+  if (ENABLE_AUTHORING_TOOLS) {
+    const candidatePayload = await fetchCandidateSidecar(metadata, caseUrl);
+    if (candidatePayload) {
+      mergeCandidateLabels(metadata, candidatePayload);
+    }
   }
   const scopeCalibrationPayload = await fetchScopeCalibrationSidecar(metadata, caseUrl);
   if (scopeCalibrationPayload) {

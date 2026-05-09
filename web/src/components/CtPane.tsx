@@ -56,6 +56,7 @@ interface CtPaneProps {
   sliceOffset: number;
   sliceOffsetMin: number;
   sliceOffsetMax: number;
+  airwaySliceDistanceScale?: number;
   showRoute: boolean;
   showScopeTrace: boolean;
   highlightEdges: HighlightEdge[];
@@ -94,6 +95,7 @@ export function CtPane({
   sliceOffset,
   sliceOffsetMin,
   sliceOffsetMax,
+  airwaySliceDistanceScale = 2,
   showRoute,
   showScopeTrace,
   highlightEdges,
@@ -135,7 +137,7 @@ export function CtPane({
     const drawInfo =
       viewMode === "standard"
         ? drawStandardCt(canvas, plane, ct, volume, focusRas, sliceOffset, noduleRas, noduleAsset)
-        : drawAirwayAlignedCt(canvas, plane, ct, volume, airwayFrame, sliceOffset, noduleRas, noduleAsset);
+        : drawAirwayAlignedCt(canvas, plane, ct, volume, airwayFrame, sliceOffset, noduleRas, noduleAsset, airwaySliceDistanceScale);
     drawInfoRef.current = drawInfo;
     const ctx = canvas.getContext("2d");
     if (!ctx) {
@@ -174,6 +176,7 @@ export function CtPane({
     scopeTracePath,
     airwayFrame,
     sliceOffset,
+    airwaySliceDistanceScale,
     showRoute,
     showScopeTrace,
     highlightEdges,
@@ -321,15 +324,16 @@ function drawAirwayAlignedCt(
   frame: AirwayFrame,
   sliceOffset: number,
   noduleRas: Vec3,
-  noduleAsset: LoadedNoduleAsset | null
+  noduleAsset: LoadedNoduleAsset | null,
+  sliceDistanceScale: number
 ): DrawInfo {
   const width = 256;
   const height = 256;
   const axes = airwayPlaneAxes(plane, frame);
-  const scrollMm = sliceOffset * 2.0;
+  const scrollMm = sliceOffset * sliceDistanceScale;
   const origin = add(frame.origin, scale(axes.normal, scrollMm));
-  const fovX = plane === "axial" ? 72 : 132;
-  const fovY = plane === "axial" ? 72 : 96;
+  const fovX = plane === "axial" ? 42 : 132;
+  const fovY = plane === "axial" ? 42 : 96;
   canvas.width = width;
   canvas.height = height;
 

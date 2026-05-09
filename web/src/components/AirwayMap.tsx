@@ -102,7 +102,7 @@ export function AirwayMap({
 
     addAirwayLines(scene, webCase, 0x5e8790, 0.18);
     addRouteTube(scene, route.routePoints, 0x2fe2ff, 2.0, 0.98);
-    addRouteLines(scene, indexes, route.edgePath, route.nodePath, 0xb7fbff, 0.9);
+    addRouteLines(scene, route.routePoints, 0xb7fbff, 0.9);
     addEdgeHighlights(scene, indexes, committedEdgeIds, 0x2ef082, 1);
     if (decision) {
       addDecisionLines(scene, indexes, decision, selectedEdgeId);
@@ -111,7 +111,7 @@ export function AirwayMap({
       addCurrentMarker(scene, driveRas);
     }
     addEndpointDots(scene, webCase, 0.78);
-    addTargetEndpointDots(scene, indexes, selectableEndpointIds.length ? selectableEndpointIds : [selectedEndpointId], selectedEndpointId);
+    addTargetEndpointDots(scene, indexes, selectableEndpointIds.length ? selectableEndpointIds : [selectedEndpointId], selectedEndpointId, route.routePoints[route.routePoints.length - 1] ?? null);
 
     const renderScene = () => {
       updateLabels();
@@ -417,21 +417,8 @@ function addAirwayLines(scene: THREE.Scene, webCase: WebCase, color: number, opa
   );
 }
 
-function addRouteLines(scene: THREE.Scene, indexes: CaseIndexes, edgePath: number[], nodePath: number[], color: number, opacity: number) {
-  const positions: number[] = [];
-  edgePath.forEach((edgeId, index) => {
-    const edge = indexes.edgesById.get(edgeId);
-    if (!edge) {
-      return;
-    }
-    const points = orientedEdgePoints(edge, nodePath[index], nodePath[index + 1]);
-    for (let i = 1; i < points.length; i += 1) {
-      positions.push(...rasToScene(points[i - 1]), ...rasToScene(points[i]));
-    }
-  });
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  scene.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity })));
+function addRouteLines(scene: THREE.Scene, routePoints: Vec3[], color: number, opacity: number) {
+  addPointLine(scene, routePoints, color, opacity);
 }
 
 function addEdgeHighlights(scene: THREE.Scene, indexes: CaseIndexes, edgeIds: number[], color: number, opacity: number) {
@@ -488,7 +475,7 @@ function addEndpointDots(scene: THREE.Scene, webCase: WebCase, opacity = 0.78) {
   scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0x9af6ff, size: 3.1, sizeAttenuation: false, transparent: true, opacity })));
 }
 
-function addTargetEndpointDots(scene: THREE.Scene, indexes: CaseIndexes, endpointIds: number[], selectedEndpointId: number) {
+function addTargetEndpointDots(scene: THREE.Scene, indexes: CaseIndexes, endpointIds: number[], selectedEndpointId: number, selectedEndpointRas: Vec3 | null = null) {
   const acceptedEndpointIds = endpointIds.filter((nodeId, index) => endpointIds.indexOf(nodeId) === index);
   const acceptedPositions: number[] = [];
   acceptedEndpointIds.forEach((nodeId) => {
@@ -509,12 +496,13 @@ function addTargetEndpointDots(scene: THREE.Scene, indexes: CaseIndexes, endpoin
   }
 
   const selectedNode = indexes.nodesById.get(selectedEndpointId);
-  if (selectedNode) {
+  const markerRas = selectedEndpointRas ?? selectedNode?.ras ?? null;
+  if (markerRas) {
     const marker = new THREE.Mesh(
       new THREE.SphereGeometry(4.0, 18, 10),
       new THREE.MeshBasicMaterial({ color: 0xffd23a, transparent: true, opacity: 0.98 })
     );
-    marker.position.copy(toVector3(selectedNode.ras));
+    marker.position.copy(toVector3(markerRas));
     scene.add(marker);
   }
 }

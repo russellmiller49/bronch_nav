@@ -143,6 +143,15 @@
         }
       }
     },
+    "27": {
+      "cameraBackMm": 4,
+      "lookAheadMm": 30,
+      "yawDeg": 0,
+      "pitchDeg": 0,
+      "rollDeg": 0,
+      "fovDeg": 111,
+      "labelOffsets": {}
+    },
     "28": {
       "cameraBackMm": 4,
       "lookAheadMm": 8,
@@ -351,5 +360,5 @@
       "labelOffsets": {}
     }
   },
-  "updatedAt": "2026-05-08T12:04:32.921Z"
+  "updatedAt": "2026-05-09T03:11:25.668Z"
 }

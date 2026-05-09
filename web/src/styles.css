@@ -317,6 +317,21 @@ input[type="range"] {
   line-height: 1.45;
 }
 
+.instruction-list {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: #c0ccd4;
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.instruction-list li::marker {
+  color: #32c8eb;
+  font-weight: 800;
+}
+
 .path-list {
   display: flex;
   flex-wrap: wrap;

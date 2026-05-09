@@ -48,6 +48,11 @@ interface CentralAirwayFinding {
 }
 
 const ZERO_SLICE_OFFSETS: SliceOffsets = { axial: 0, coronal: 0, sagittal: 0 };
+const AIRWAY_SLICE_OFFSET_RANGES: SliceOffsetRanges = {
+  axial: { min: -8, max: 8 },
+  coronal: { min: -8, max: 8 },
+  sagittal: { min: -8, max: 8 }
+};
 const DEFAULT_SLICE_OFFSET_RANGES: SliceOffsetRanges = {
   axial: { min: -220, max: 220 },
   coronal: { min: -220, max: 220 },
@@ -64,6 +69,7 @@ const TARGET_PATH_RADIUS_MARGIN_MM = 8;
 const NODULE_CONTACT_ALPHA_MIN = 64;
 const NODULE_CONTACT_MIN_HITS = 2;
 const NODULE_CONTACT_SAMPLE_MM = 1.5;
+const ROUTE_CONTACT_DECISION_CLEARANCE_MM = 1;
 const CENTRAL_AIRWAY_REVIEW_MAX_ROOT_DISTANCE_MM = 230;
 const CENTRAL_AIRWAY_REVIEW_MIN_RADIUS_MM = 0.9;
 const CENTRAL_AIRWAY_REVIEW_SAMPLE_MM = 1.25;
@@ -71,6 +77,7 @@ const CENTRAL_AIRWAY_REVIEW_MIN_OVERLAP_MM = 25;
 const CENTRAL_AIRWAY_REVIEW_EXCLUDED_TARGET_NUMBERS = new Set([19, 123, 154, 158, 180]);
 const CHOICE_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const ENABLE_SCOPE_DEBUG = __ENABLE_SCOPE_DEBUG__;
+const ENABLE_AUTHORING_TOOLS = ENABLE_SCOPE_DEBUG;
 const MANUAL_TARGET_PATH_OVERRIDES = [
   { targetId: "advanced", targetIndex: 1, branchNodeId: 55, optionLabel: "A" },
   { targetId: "beginner", targetIndex: 1, branchNodeId: 255, optionLabel: "B" }
@@ -94,20 +101,20 @@ export function App() {
   const [committedPathEdgeIds, setCommittedPathEdgeIds] = useState<number[]>([]);
   const [currentDecisionIndex, setCurrentDecisionIndex] = useState(0);
   const [selectedEdgeId, setSelectedEdgeId] = useState<number | null>(null);
-  const [showRoute, setShowRoute] = useState(false);
+  const [showRoute, setShowRoute] = useState(true);
   const [showCandidateLabels, setShowCandidateLabels] = useState(true);
   const [ctViewMode, setCtViewMode] = useState<CtViewMode>("standard");
   const [sliceOffsets, setSliceOffsets] = useState<SliceOffsets>(ZERO_SLICE_OFFSETS);
   const [ctZoom, setCtZoom] = useState(1);
-  const [scopeDebugMode, setScopeDebugMode] = useState(false);
+  const [scopeDebugMode, setScopeDebugMode] = useState(ENABLE_SCOPE_DEBUG);
   const [showScopeCompass, setShowScopeCompass] = useState(false);
   const [showScopeTrace, setShowScopeTrace] = useState(true);
-  const [showScopeTumor, setShowScopeTumor] = useState(true);
+  const [showScopeTumor, setShowScopeTumor] = useState(false);
   const [showCentralAirwayReview, setShowCentralAirwayReview] = useState(false);
   const [scopeAdjustments, setScopeAdjustments] = useState<ScopeAdjustments>({});
   const [calibrationStatus, setCalibrationStatus] = useState("");
   const [targetPlacementStatus, setTargetPlacementStatus] = useState("");
-  const [mode, setMode] = useState<"setup" | "practice">("practice");
+  const [mode, setMode] = useState<"setup" | "practice">("setup");
   const [driveDistanceMm, setDriveDistanceMm] = useState(0);
   const [driveRunning, setDriveRunning] = useState(false);
   const [debugFullPathPreview, setDebugFullPathPreview] = useState(false);
@@ -151,11 +158,11 @@ export function App() {
     [activeTarget?.id, activeTargetLocations, beginnerTarget, indexes, beginnerNoduleAsset]
   );
   const centralAirwayFindings = useMemo(
-    () => (indexes && beginnerNoduleAsset ? centralAirwayFindingsForTargets(beginnerTargetLocations, indexes, beginnerNoduleAsset) : []),
+    () => (ENABLE_AUTHORING_TOOLS && indexes && beginnerNoduleAsset ? centralAirwayFindingsForTargets(beginnerTargetLocations, indexes, beginnerNoduleAsset) : []),
     [beginnerTargetLocations, indexes, beginnerNoduleAsset]
   );
   const activeCentralAirwayFindingIndex = useMemo(
-    () => (activeTarget?.id === "beginner" ? centralAirwayFindings.findIndex((finding) => finding.targetIndex === targetLocationIndex) : -1),
+    () => (ENABLE_AUTHORING_TOOLS && activeTarget?.id === "beginner" ? centralAirwayFindings.findIndex((finding) => finding.targetIndex === targetLocationIndex) : -1),
     [activeTarget?.id, centralAirwayFindings, targetLocationIndex]
   );
   const activeCentralAirwayFinding = activeCentralAirwayFindingIndex >= 0 ? centralAirwayFindings[activeCentralAirwayFindingIndex] : null;
@@ -214,18 +221,26 @@ export function App() {
   const selectedOption = visibleDecision?.options.find((option) => option.edgeId === selectedEdgeId) ?? null;
   const correctOptions = visibleDecision?.options.filter((option) => option.isCorrect) ?? [];
   const airwayFrame = useMemo(() => (route && focusRas ? buildAirwayFrame(route.routePoints, focusRas) : null), [route, focusRas]);
+  const focusRouteDistanceMm = useMemo(() => (route && focusRas ? nearestRouteDistance(route, focusRas) : 0), [route, focusRas?.[0], focusRas?.[1], focusRas?.[2]]);
+  const airwayAxialFrame = useMemo(() => {
+    if (!route || !focusRas) {
+      return null;
+    }
+    const axialDistanceMm = clamp(focusRouteDistanceMm + sliceOffsets.axial * 2, 0, route.totalLengthMm);
+    return buildAirwayFrame(route.routePoints, pointAtRouteDistance(route, axialDistanceMm));
+  }, [route, focusRas, focusRouteDistanceMm, sliceOffsets.axial]);
   const sliceOffsetRanges = useMemo(
-    () => (loadedCase && focusRas ? sliceOffsetRangesForView(loadedCase.metadata.ct, focusRas, ctViewMode) : DEFAULT_SLICE_OFFSET_RANGES),
-    [loadedCase, focusRas?.[0], focusRas?.[1], focusRas?.[2], ctViewMode]
+    () => (loadedCase && focusRas ? sliceOffsetRangesForView(loadedCase.metadata.ct, focusRas, ctViewMode, route, focusRouteDistanceMm) : DEFAULT_SLICE_OFFSET_RANGES),
+    [loadedCase, focusRas?.[0], focusRas?.[1], focusRas?.[2], ctViewMode, route, focusRouteDistanceMm]
   );
   const hasCandidateLabels = loadedCase?.metadata.airway.edges.some((edge) => edge.candidateLabels?.length) ?? false;
   const candidateOverlays = useMemo(
-    () => (setupMode && showCandidateLabels && visibleDecision ? buildCandidateOverlays(visibleDecision, indexes?.edgesById ?? new Map()) : []),
+    () => (setupMode && ENABLE_AUTHORING_TOOLS && showCandidateLabels && visibleDecision ? buildCandidateOverlays(visibleDecision, indexes?.edgesById ?? new Map()) : []),
     [setupMode, showCandidateLabels, visibleDecision, indexes]
   );
   const targetSurveyOverlays = useMemo<TargetSurveyOverlay[]>(
     () =>
-      setupMode && showCentralAirwayReview && activeCentralAirwayFinding
+      setupMode && ENABLE_AUTHORING_TOOLS && showCentralAirwayReview && activeCentralAirwayFinding
         ? [
             {
               label: String(activeCentralAirwayFinding.targetNumber),
@@ -296,6 +311,19 @@ export function App() {
   }, [route]);
 
   useEffect(() => {
+    if (!setupMode || !route || debugFullPathPreview) {
+      return;
+    }
+    const nextDecisionIndex = Math.min(currentDecisionIndex, Math.max(route.decisions.length - 1, 0));
+    if (nextDecisionIndex !== currentDecisionIndex) {
+      setCurrentDecisionIndex(nextDecisionIndex);
+      return;
+    }
+    setDriveRunning(false);
+    setDriveDistanceMm(stopDistanceForDecision(route, route.decisions[nextDecisionIndex] ?? null));
+  }, [setupMode, route, currentDecisionIndex, debugFullPathPreview]);
+
+  useEffect(() => {
     if (!driveRunning || !route) {
       return;
     }
@@ -340,7 +368,7 @@ export function App() {
     );
   }
 
-  if (!loadedCase || !indexes || !route || !focusRas || !noduleRas || !airwayFrame) {
+  if (!loadedCase || !indexes || !route || !focusRas || !noduleRas || !airwayFrame || !airwayAxialFrame) {
     return (
       <main className="app app-centered">
         <div className="loading-panel">Loading case</div>
@@ -434,7 +462,7 @@ export function App() {
       setCurrentDecisionIndex(nextDecisionIndex);
       setDriveDistanceMm(stopDistanceForDecision(route, route.decisions[nextDecisionIndex] ?? null));
       setShowRoute(true);
-      setScopeDebugMode(ENABLE_SCOPE_DEBUG);
+      setScopeDebugMode(ENABLE_AUTHORING_TOOLS);
       return;
     }
 
@@ -526,7 +554,7 @@ export function App() {
   };
 
   const jumpToBeginnerTargetIndex = (nextIndex: number, status: string) => {
-    if (!beginnerTarget || nextIndex < 0 || nextIndex >= beginnerTargetLocations.length) {
+    if (!ENABLE_AUTHORING_TOOLS || !beginnerTarget || nextIndex < 0 || nextIndex >= beginnerTargetLocations.length) {
       return;
     }
     if (activeTarget?.id !== beginnerTarget.id) {
@@ -540,6 +568,9 @@ export function App() {
   };
 
   const toggleCentralAirwayReview = () => {
+    if (!ENABLE_AUTHORING_TOOLS) {
+      return;
+    }
     if (showCentralAirwayReview) {
       setShowCentralAirwayReview(false);
       return;
@@ -552,7 +583,7 @@ export function App() {
   };
 
   const stepCentralAirwayFinding = (delta: number) => {
-    if (!centralAirwayFindings.length) {
+    if (!ENABLE_AUTHORING_TOOLS || !centralAirwayFindings.length) {
       return;
     }
     const currentIndex = activeCentralAirwayFindingIndex >= 0 ? activeCentralAirwayFindingIndex : delta > 0 ? -1 : 0;
@@ -695,27 +726,30 @@ export function App() {
           </button>
         </div>
         {setupMode && (
-          <>
-            <label className="toggle">
-              <input type="checkbox" checked={showRoute} onChange={(event) => setShowRoute(event.target.checked)} />
-              <span>Centerline</span>
-            </label>
-            <label className={`toggle ${hasCandidateLabels ? "" : "toggle-disabled"}`}>
-              <input
-                type="checkbox"
-                checked={showCandidateLabels && hasCandidateLabels}
-                disabled={!hasCandidateLabels}
-                onChange={(event) => setShowCandidateLabels(event.target.checked)}
-              />
-              <span>Candidates</span>
-            </label>
-          </>
+          <label className="toggle">
+            <input type="checkbox" checked={showRoute} onChange={(event) => setShowRoute(event.target.checked)} />
+            <span>Centerline</span>
+          </label>
+        )}
+        {setupMode && ENABLE_AUTHORING_TOOLS && (
+          <label className={`toggle ${hasCandidateLabels ? "" : "toggle-disabled"}`}>
+            <input
+              type="checkbox"
+              checked={showCandidateLabels && hasCandidateLabels}
+              disabled={!hasCandidateLabels}
+              onChange={(event) => setShowCandidateLabels(event.target.checked)}
+            />
+            <span>Candidates</span>
+          </label>
         )}
         <label className="toggle">
           <input
             type="checkbox"
             checked={ctViewMode === "airway"}
-            onChange={(event) => setCtViewMode(event.target.checked ? "airway" : "standard")}
+            onChange={(event) => {
+              setCtViewMode(event.target.checked ? "airway" : "standard");
+              setSliceOffsets(ZERO_SLICE_OFFSETS);
+            }}
           />
           <span>Airway CT</span>
         </label>
@@ -744,6 +778,23 @@ export function App() {
       </header>
 
       <aside className="trainer-panel">
+        <div className="panel-section guide-section">
+          <span className="section-label">How to use</span>
+          {setupMode ? (
+            <ol className="instruction-list">
+              <li>Choose a target, or use Surprise me to move to another accepted location.</li>
+              <li>Drag the nodule preview onto a CT pane to snap the target near that spot.</li>
+              <li>Use Centerline, CT slice controls, and the airway map to confirm the route, then switch to Practice.</li>
+            </ol>
+          ) : (
+            <ol className="instruction-list">
+              <li>Press Drive to move the scope to the next branch point.</li>
+              <li>Compare the A/B/C labels in the bronchoscope view with the branch choices, select one, then press Drive on.</li>
+              <li>Scroll CT slices or switch Airway CT on when you need more orientation; the route ends when the lesion is reached.</li>
+            </ol>
+          )}
+        </div>
+
         <div className="panel-section">
           <span className="section-label">Target</span>
           {setupMode && noduleTargets.length > 1 && (
@@ -769,7 +820,7 @@ export function App() {
                 </button>
               </div>
               <p className="placement-help">Drag the nodule preview onto any CT view to snap it to the nearest target location.</p>
-              {beginnerTarget && (
+              {ENABLE_AUTHORING_TOOLS && beginnerTarget && (
                 <div className={`central-review-panel ${showCentralAirwayReview ? "central-review-panel-active" : ""}`}>
                   <button className="secondary-action wide central-review-trigger" onClick={toggleCentralAirwayReview} disabled={!centralAirwayFindings.length}>
                     {showCentralAirwayReview ? "Hide central check" : "Central airway check"}
@@ -1091,10 +1142,11 @@ export function App() {
             noduleAsset={activeNoduleAsset}
             routePaths={centerlineRoutePaths}
             scopeTracePath={scopeTracePath}
-            airwayFrame={airwayFrame}
+            airwayFrame={ctViewMode === "airway" ? airwayAxialFrame : airwayFrame}
             sliceOffset={sliceOffsets.axial}
             sliceOffsetMin={sliceOffsetRanges.axial.min}
             sliceOffsetMax={sliceOffsetRanges.axial.max}
+            airwaySliceDistanceScale={ctViewMode === "airway" ? 0 : 2}
             showRoute={showRoute}
             showScopeTrace={showScopeTrace}
             highlightEdges={highlightEdges}
@@ -1232,12 +1284,17 @@ function appAssetUrl(path: string) {
   return new URL(path, new URL(__APP_BASE_PATH__, window.location.origin)).toString();
 }
 
-function sliceOffsetRangesForView(ct: CtMetadata, focusRas: Vec3, viewMode: CtViewMode): SliceOffsetRanges {
+function sliceOffsetRangesForView(ct: CtMetadata, focusRas: Vec3, viewMode: CtViewMode, route: RouteState | null = null, focusRouteDistanceMm = 0): SliceOffsetRanges {
   if (viewMode === "airway") {
+    const routeAxialMin = route ? Math.ceil(-focusRouteDistanceMm / 2) : AIRWAY_SLICE_OFFSET_RANGES.axial.min;
+    const routeAxialMax = route ? Math.floor((route.totalLengthMm - focusRouteDistanceMm) / 2) : AIRWAY_SLICE_OFFSET_RANGES.axial.max;
     return {
-      axial: { min: -42, max: 42 },
-      coronal: { min: -42, max: 42 },
-      sagittal: { min: -42, max: 42 }
+      axial: {
+        min: Math.max(AIRWAY_SLICE_OFFSET_RANGES.axial.min, routeAxialMin),
+        max: Math.min(AIRWAY_SLICE_OFFSET_RANGES.axial.max, routeAxialMax)
+      },
+      coronal: AIRWAY_SLICE_OFFSET_RANGES.coronal,
+      sagittal: AIRWAY_SLICE_OFFSET_RANGES.sagittal
     };
   }
   const focus = rasToIndex(focusRas, ct);
@@ -1537,6 +1594,133 @@ function sampleUint8Nearest(volume: Uint8Array, sx: number, sy: number, sz: numb
   const jj = Math.round(clamp(j, 0, sy - 1));
   const kk = Math.round(clamp(k, 0, sz - 1));
   return volume[kk * sx * sy + jj * sx + ii] ?? 0;
+}
+
+function clipRouteToNoduleContact(route: RouteState, targetRas: Vec3 | null, noduleAsset: LoadedNoduleAsset | null): RouteState {
+  if (!targetRas || !noduleAsset) {
+    return route;
+  }
+  const contact = firstNoduleContact(route, targetRas, noduleAsset);
+  if (!contact || contact.distanceMm >= route.totalLengthMm - 0.05) {
+    return route;
+  }
+  const { routePoints, routeDistancesMm } = routePointsUntilDistance(route, contact.distanceMm, contact.ras);
+  const { edgePath, nodePath } = structuralPathUntilDistance(route, contact.distanceMm);
+  const decisions = route.decisions
+    .filter((decision) => {
+      const decisionDistanceMm = route.nodeDistancesMm[decision.nodeId] ?? nearestRouteDistance(route, decision.nodeRas);
+      return decisionDistanceMm < contact.distanceMm - ROUTE_CONTACT_DECISION_CLEARANCE_MM;
+    })
+    .map((decision, index) => ({ ...decision, index }));
+  return {
+    ...route,
+    edgePath,
+    nodePath,
+    routePoints,
+    routeDistancesMm,
+    totalLengthMm: contact.distanceMm,
+    decisions
+  };
+}
+
+function firstNoduleContact(route: RouteState, targetRas: Vec3, noduleAsset: LoadedNoduleAsset): { distanceMm: number; ras: Vec3 } | null {
+  if (!route.routePoints.length) {
+    return null;
+  }
+  if (sampleNoduleAlpha(noduleAsset, route.routePoints[0], targetRas) >= NODULE_CONTACT_ALPHA_MIN) {
+    return { distanceMm: 0, ras: route.routePoints[0] };
+  }
+
+  for (let pointIndex = 1; pointIndex < route.routePoints.length; pointIndex += 1) {
+    const prev = route.routePoints[pointIndex - 1];
+    const next = route.routePoints[pointIndex];
+    const prevDistanceMm = route.routeDistancesMm[pointIndex - 1] ?? 0;
+    const segmentLengthMm = distanceBetween(prev, next);
+    const sampleCount = Math.max(1, Math.ceil(segmentLengthMm / NODULE_CONTACT_SAMPLE_MM));
+    let lastClearT = 0;
+
+    for (let sampleIndex = 1; sampleIndex <= sampleCount; sampleIndex += 1) {
+      const t = sampleIndex / sampleCount;
+      const sample = interpolateRas(prev, next, t);
+      if (sampleNoduleAlpha(noduleAsset, sample, targetRas) < NODULE_CONTACT_ALPHA_MIN) {
+        lastClearT = t;
+        continue;
+      }
+      const contactT = refineNoduleContactT(prev, next, lastClearT, t, targetRas, noduleAsset);
+      return {
+        distanceMm: prevDistanceMm + segmentLengthMm * contactT,
+        ras: interpolateRas(prev, next, contactT)
+      };
+    }
+  }
+  return null;
+}
+
+function refineNoduleContactT(prev: Vec3, next: Vec3, clearT: number, hitT: number, targetRas: Vec3, noduleAsset: LoadedNoduleAsset): number {
+  let low = clearT;
+  let high = hitT;
+  for (let step = 0; step < 8; step += 1) {
+    const mid = (low + high) * 0.5;
+    const sample = interpolateRas(prev, next, mid);
+    if (sampleNoduleAlpha(noduleAsset, sample, targetRas) >= NODULE_CONTACT_ALPHA_MIN) {
+      high = mid;
+    } else {
+      low = mid;
+    }
+  }
+  return high;
+}
+
+function routePointsUntilDistance(route: RouteState, distanceMm: number, endRas: Vec3): { routePoints: Vec3[]; routeDistancesMm: number[] } {
+  const routePoints: Vec3[] = [];
+  const routeDistancesMm: number[] = [];
+  route.routePoints.forEach((point, index) => {
+    const pointDistanceMm = route.routeDistancesMm[index] ?? 0;
+    if (pointDistanceMm < distanceMm - 0.01) {
+      routePoints.push(point);
+      routeDistancesMm.push(pointDistanceMm);
+    }
+  });
+
+  const lastPoint = routePoints[routePoints.length - 1];
+  if (!lastPoint || distanceBetween(lastPoint, endRas) > 0.01) {
+    routePoints.push(endRas);
+    routeDistancesMm.push(distanceMm);
+  } else {
+    routePoints[routePoints.length - 1] = endRas;
+    routeDistancesMm[routeDistancesMm.length - 1] = distanceMm;
+  }
+  return { routePoints, routeDistancesMm };
+}
+
+function structuralPathUntilDistance(route: RouteState, distanceMm: number): { edgePath: number[]; nodePath: number[] } {
+  const edgePath: number[] = [];
+  const nodePath: number[] = [];
+  route.edgePath.forEach((edgeId, edgeIndex) => {
+    const startNodeId = route.nodePath[edgeIndex];
+    const endNodeId = route.nodePath[edgeIndex + 1];
+    if (startNodeId == null || endNodeId == null) {
+      return;
+    }
+    const startDistanceMm = route.nodeDistancesMm[startNodeId] ?? 0;
+    const endDistanceMm = route.nodeDistancesMm[endNodeId] ?? Number.POSITIVE_INFINITY;
+    if (startDistanceMm > distanceMm + 0.01 || edgePath.length && startDistanceMm >= distanceMm - 0.01) {
+      return;
+    }
+    if (!nodePath.length) {
+      nodePath.push(startNodeId);
+    }
+    edgePath.push(edgeId);
+    nodePath.push(endNodeId);
+    if (endDistanceMm >= distanceMm - 0.01) {
+      return;
+    }
+  });
+  return { edgePath, nodePath: nodePath.length ? nodePath : route.nodePath.slice(0, 1) };
+}
+
+function interpolateRas(a: Vec3, b: Vec3, t: number): Vec3 {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 }
 
 function nearestTargetLocationIndex(locations: NoduleTargetLocation[], ras: Vec3): number | null {
