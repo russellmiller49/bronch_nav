@@ -6,6 +6,7 @@ const NON_VISIBLE_TERMINAL_LENGTH_MM = 6;
 
 const NEARBY_DECISION_COLLAPSES = [
   { parentNodeId: 2, childNodeId: 6, viaEdgeId: 5 },
+  { parentNodeId: 4, childNodeId: 10, viaEdgeId: 9 },
   { parentNodeId: 46, childNodeId: 89, viaEdgeId: 88 },
   { parentNodeId: 92, childNodeId: 93, viaEdgeId: 91 }
 ] as const;

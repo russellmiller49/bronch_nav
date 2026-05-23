@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { AirwayEdge, CtMetadata, LoadedNoduleAsset, Vec3 } from "../types";
 import {
   add,
@@ -42,13 +42,25 @@ export interface TargetSurveyOverlay {
   active?: boolean;
 }
 
+interface PanOffset {
+  x: number;
+  y: number;
+}
+
+interface PanDragState {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startPan: PanOffset;
+}
+
 interface CtPaneProps {
   plane: PlaneKind;
   viewMode: CtViewMode;
   ct: CtMetadata;
   volume: Uint8Array;
   focusRas: Vec3;
-  noduleRas: Vec3;
+  noduleRas: Vec3 | null;
   noduleAsset: LoadedNoduleAsset | null;
   routePaths: Vec3[][];
   scopeTracePath: Vec3[];
@@ -81,6 +93,9 @@ const AIRWAY_TITLES: Record<PlaneKind, string> = {
   sagittal: "Airway long-axis B"
 };
 
+const ZERO_PAN: PanOffset = { x: 0, y: 0 };
+const MIN_PAN_ZOOM = 1.01;
+
 export function CtPane({
   plane,
   viewMode,
@@ -108,9 +123,14 @@ export function CtPane({
   onTargetDrop
 }: CtPaneProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
+  const canvasWrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawInfoRef = useRef<DrawInfo | null>(null);
+  const panDragRef = useRef<PanDragState | null>(null);
   const [dropActive, setDropActive] = useState(false);
+  const [pan, setPan] = useState<PanOffset>(ZERO_PAN);
+  const [panning, setPanning] = useState(false);
+  const canPan = zoom > MIN_PAN_ZOOM;
 
   useEffect(() => {
     const section = sectionRef.current;
@@ -161,7 +181,7 @@ export function CtPane({
     if (targetSurveyOverlays.length) {
       drawTargetSurveyOverlays(ctx, drawInfo, targetSurveyOverlays);
     }
-    if (!noduleAsset) {
+    if (!noduleAsset && noduleRas) {
       drawMarker(ctx, drawInfo, noduleRas, "#ff5b68", 6, "target");
     }
   }, [
@@ -184,7 +204,77 @@ export function CtPane({
     targetSurveyOverlays
   ]);
 
+  useEffect(() => {
+    setPan((current) => clampPanOffset(current, canvasWrapRef.current, zoom));
+    if (!canPan) {
+      panDragRef.current = null;
+      setPanning(false);
+    }
+  }, [canPan, zoom]);
+
+  useEffect(() => {
+    const wrap = canvasWrapRef.current;
+    if (!wrap || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      setPan((current) => clampPanOffset(current, wrap, zoom));
+    });
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, [zoom]);
+
   const title = viewMode === "standard" ? STANDARD_TITLES[plane] : AIRWAY_TITLES[plane];
+  const beginPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const target = event.target as Element | null;
+    if (!canPan || event.button !== 0 || target?.closest(".slice-scrubber")) {
+      return;
+    }
+    event.preventDefault();
+    panDragRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startPan: clampPanOffset(pan, canvasWrapRef.current, zoom)
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setPanning(true);
+  };
+  const movePan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const dragState = panDragRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    setPan(
+      clampPanOffset(
+        {
+          x: dragState.startPan.x + event.clientX - dragState.startClientX,
+          y: dragState.startPan.y + event.clientY - dragState.startClientY
+        },
+        canvasWrapRef.current,
+        zoom
+      )
+    );
+  };
+  const endPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const dragState = panDragRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+    panDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setPanning(false);
+  };
+  const resetPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const target = event.target as Element | null;
+    if (!canPan || target?.closest(".slice-scrubber")) {
+      return;
+    }
+    setPan(ZERO_PAN);
+  };
   const handleDragOver = (event: DragEvent<HTMLElement>) => {
     if (!onTargetDrop) {
       return;
@@ -222,8 +312,16 @@ export function CtPane({
         <span>{title}</span>
         <span>{viewMode === "standard" ? standardSliceLabel(plane, focusRas, ct, sliceOffset) : airwaySliceLabel(plane, sliceOffset)}</span>
       </div>
-      <div className="ct-canvas-wrap">
-        <canvas ref={canvasRef} className="ct-canvas" style={{ transform: `scale(${zoom})` }} />
+      <div
+        ref={canvasWrapRef}
+        className={`ct-canvas-wrap ${canPan ? "ct-canvas-wrap-pannable" : ""} ${panning ? "ct-canvas-wrap-panning" : ""}`}
+        onPointerDown={beginPan}
+        onPointerMove={movePan}
+        onPointerUp={endPan}
+        onPointerCancel={endPan}
+        onDoubleClick={resetPan}
+      >
+        <canvas ref={canvasRef} className="ct-canvas" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }} />
         <label className="slice-scrubber">
           <input
             type="range"
@@ -238,6 +336,18 @@ export function CtPane({
       </div>
     </section>
   );
+}
+
+function clampPanOffset(offset: PanOffset, wrap: HTMLElement | null, zoom: number): PanOffset {
+  if (!wrap || zoom <= MIN_PAN_ZOOM) {
+    return ZERO_PAN;
+  }
+  const maxX = Math.max(0, (wrap.clientWidth * (zoom - 1)) / 2);
+  const maxY = Math.max(0, (wrap.clientHeight * (zoom - 1)) / 2);
+  return {
+    x: clamp(offset.x, -maxX, maxX),
+    y: clamp(offset.y, -maxY, maxY)
+  };
 }
 
 type DrawInfo =
@@ -269,7 +379,7 @@ function drawStandardCt(
   volume: Uint8Array,
   focusRas: Vec3,
   sliceOffset: number,
-  noduleRas: Vec3,
+  noduleRas: Vec3 | null,
   noduleAsset: LoadedNoduleAsset | null
 ): DrawInfo {
   const [sx, sy, sz] = ct.sizeXyz;
@@ -308,7 +418,7 @@ function drawStandardCt(
         vz = sz - 1 - y;
       }
       const baseValue = volume[vz * sx * sy + vy * sx + vx] ?? 0;
-      const ras = noduleAsset ? indexToRas({ i: vx, j: vy, k: vz }, ct) : null;
+      const ras = noduleAsset && noduleRas ? indexToRas({ i: vx, j: vy, k: vz }, ct) : null;
       writePixel(image, x, y, width, ras ? applyNoduleAsset(baseValue, ras, noduleRas, noduleAsset, ct.windowHu) : baseValue);
     }
   }
@@ -323,7 +433,7 @@ function drawAirwayAlignedCt(
   volume: Uint8Array,
   frame: AirwayFrame,
   sliceOffset: number,
-  noduleRas: Vec3,
+  noduleRas: Vec3 | null,
   noduleAsset: LoadedNoduleAsset | null,
   sliceDistanceScale: number
 ): DrawInfo {
@@ -424,11 +534,11 @@ function voxel(volume: Uint8Array, sx: number, sy: number, i: number, j: number,
 function applyNoduleAsset(
   baseValue: number,
   ras: Vec3,
-  noduleRas: Vec3,
+  noduleRas: Vec3 | null,
   noduleAsset: LoadedNoduleAsset | null,
   windowHu: [number, number]
 ) {
-  if (!noduleAsset) {
+  if (!noduleAsset || !noduleRas) {
     return baseValue;
   }
   const sample = sampleNoduleAsset(noduleAsset, ras, noduleRas);

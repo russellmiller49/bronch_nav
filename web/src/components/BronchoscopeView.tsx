@@ -214,11 +214,14 @@ export function BronchoscopeView({
       camera.updateProjectionMatrix();
       renderRef.current();
     };
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(onResize) : null;
+    resizeObserver?.observe(mount);
     window.addEventListener("resize", onResize);
     renderRef.current();
 
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
       window.removeEventListener("resize", onResize);
       materialRef.current?.dispose();
       renderer.dispose();

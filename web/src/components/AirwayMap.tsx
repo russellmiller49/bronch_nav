@@ -25,7 +25,7 @@ interface AirwayMapProps {
   candidateOverlays: CandidateOverlay[];
   selectedEndpointId: number;
   selectableEndpointIds?: number[];
-  noduleRas: Vec3;
+  noduleRas: Vec3 | null;
   noduleRadiusMm?: number | null;
   selectedEdgeId: number | null;
   committedEdgeIds?: number[];
@@ -62,6 +62,7 @@ export function AirwayMap({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const onEndpointChangeRef = useRef(onEndpointChange);
   const [labels, setLabels] = useState<MapLabel[]>([]);
+  const [showVisualOptions, setShowVisualOptions] = useState(false);
 
   useEffect(() => {
     onEndpointChangeRef.current = onEndpointChange;
@@ -104,8 +105,10 @@ export function AirwayMap({
     addRouteTube(scene, route.routePoints, 0x2fe2ff, 2.0, 0.98);
     addRouteLines(scene, route.routePoints, 0xb7fbff, 0.9);
     addEdgeHighlights(scene, indexes, committedEdgeIds, 0x2ef082, 1);
-    if (decision) {
+    if (decision && showVisualOptions) {
       addDecisionLines(scene, indexes, decision, selectedEdgeId);
+    }
+    if (decision) {
       addCurrentMarker(scene, decision.nodeRas);
     } else if (driveRas) {
       addCurrentMarker(scene, driveRas);
@@ -120,11 +123,15 @@ export function AirwayMap({
     controls.addEventListener("change", renderScene);
 
     const addFallbackNodule = () => {
+      if (!noduleRas) {
+        renderScene();
+        return;
+      }
       addNodule(scene, noduleRas, noduleRadiusMm);
       renderScene();
     };
 
-    if (noduleMeshUrl) {
+    if (noduleMeshUrl && noduleRas) {
       loadNoduleGeometry(noduleMeshUrl)
         .then((geometry) => {
           if (cancelled) {
@@ -185,7 +192,7 @@ export function AirwayMap({
     };
 
     function updateLabels() {
-      if (!decision) {
+      if (!decision || !showVisualOptions) {
         setLabels([]);
         return;
       }
@@ -292,7 +299,24 @@ export function AirwayMap({
       renderer.forceContextLoss();
       mount.innerHTML = "";
     };
-  }, [webCase, indexes, route, decision, candidateOverlays, selectedEndpointId, selectableEndpointIds, noduleRas, noduleRadiusMm, selectedEdgeId, committedEdgeIds, driveRas, onEndpointChange, meshUrl, noduleMeshUrl]);
+  }, [
+    webCase,
+    indexes,
+    route,
+    decision,
+    candidateOverlays,
+    selectedEndpointId,
+    selectableEndpointIds,
+    noduleRas,
+    noduleRadiusMm,
+    selectedEdgeId,
+    committedEdgeIds,
+    driveRas,
+    onEndpointChange,
+    meshUrl,
+    noduleMeshUrl,
+    showVisualOptions
+  ]);
 
   return (
     <section className="map-panel">
@@ -302,6 +326,10 @@ export function AirwayMap({
       </div>
       <div className="map-render-wrap">
         <div ref={mountRef} className="map-render" />
+        <label className="map-options-toggle">
+          <input type="checkbox" checked={showVisualOptions} onChange={(event) => setShowVisualOptions(event.target.checked)} />
+          <span>Show options</span>
+        </label>
         {labels.map((item) => (
           <span
             key={item.key}

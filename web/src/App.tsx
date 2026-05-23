@@ -35,6 +35,7 @@ declare const __APP_BASE_PATH__: string;
 
 type SliceOffsets = Record<PlaneKind, number>;
 type SliceOffsetRanges = Record<PlaneKind, { min: number; max: number }>;
+type TrainerMode = "setup" | "practice" | "test";
 
 interface CentralAirwayFinding {
   targetIndex: number;
@@ -101,24 +102,26 @@ export function App() {
   const [committedPathEdgeIds, setCommittedPathEdgeIds] = useState<number[]>([]);
   const [currentDecisionIndex, setCurrentDecisionIndex] = useState(0);
   const [selectedEdgeId, setSelectedEdgeId] = useState<number | null>(null);
-  const [showRoute, setShowRoute] = useState(true);
+  const [showRoute, setShowRoute] = useState(false);
   const [showCandidateLabels, setShowCandidateLabels] = useState(true);
   const [ctViewMode, setCtViewMode] = useState<CtViewMode>("standard");
   const [sliceOffsets, setSliceOffsets] = useState<SliceOffsets>(ZERO_SLICE_OFFSETS);
   const [ctZoom, setCtZoom] = useState(1);
   const [scopeDebugMode, setScopeDebugMode] = useState(ENABLE_SCOPE_DEBUG);
   const [showScopeCompass, setShowScopeCompass] = useState(false);
-  const [showScopeTrace, setShowScopeTrace] = useState(true);
+  const [showScopeTrace, setShowScopeTrace] = useState(false);
   const [showScopeTumor, setShowScopeTumor] = useState(false);
   const [showCentralAirwayReview, setShowCentralAirwayReview] = useState(false);
+  const [targetPlaced, setTargetPlaced] = useState(false);
   const [scopeAdjustments, setScopeAdjustments] = useState<ScopeAdjustments>({});
   const [calibrationStatus, setCalibrationStatus] = useState("");
   const [targetPlacementStatus, setTargetPlacementStatus] = useState("");
-  const [mode, setMode] = useState<"setup" | "practice">("setup");
+  const [mode, setMode] = useState<TrainerMode>("setup");
   const [driveDistanceMm, setDriveDistanceMm] = useState(0);
   const [driveRunning, setDriveRunning] = useState(false);
   const [debugFullPathPreview, setDebugFullPathPreview] = useState(false);
   const [driveSpeedMmPerSec, setDriveSpeedMmPerSec] = useState(DEFAULT_DRIVE_SPEED_MM_PER_SEC);
+  const [testAttemptResults, setTestAttemptResults] = useState<Record<string, boolean>>({});
   const sourceSaveTimerRef = useRef<number | null>(null);
   const pendingTargetLocationIndexRef = useRef<number | null>(null);
 
@@ -167,7 +170,8 @@ export function App() {
   );
   const activeCentralAirwayFinding = activeCentralAirwayFindingIndex >= 0 ? centralAirwayFindings[activeCentralAirwayFindingIndex] : null;
   const activeTargetLocation = activeTargetLocations[Math.min(targetLocationIndex, Math.max(activeTargetLocations.length - 1, 0))] ?? null;
-  const activeTargetRasKey = activeTargetLocation?.targetRas.join(",") ?? "";
+  const placedTargetLocation = targetPlaced ? activeTargetLocation : null;
+  const activeTargetRasKey = placedTargetLocation?.targetRas.join(",") ?? "";
   const activeTargetCorrectTerminalIds = useMemo(
     () => activeTargetLocation?.correctTerminalNodeIds.filter((nodeId, index, nodeIds) => nodeIds.indexOf(nodeId) === index) ?? [],
     [activeTargetLocation]
@@ -181,7 +185,7 @@ export function App() {
     () =>
       indexes
         ? activePathTerminalIds.map((terminalNodeId) =>
-            clipRouteToNoduleContact(buildRoute(terminalNodeId, indexes, activePathTerminalIds), activeTargetLocation?.targetRas ?? null, activeNoduleAsset)
+            clipRouteToNoduleContact(buildRoute(terminalNodeId, indexes, activePathTerminalIds), placedTargetLocation?.targetRas ?? null, activeNoduleAsset)
           )
         : [],
     [indexes, activePathTerminalIds, correctTerminalKey, activeTargetRasKey, activeNoduleAsset]
@@ -191,11 +195,14 @@ export function App() {
     if (!selectedEndpointId || !indexes) {
       return null;
     }
-    return clipRouteToNoduleContact(buildRoute(selectedEndpointId, indexes, activePathTerminalIds), activeTargetLocation?.targetRas ?? null, activeNoduleAsset);
+    return clipRouteToNoduleContact(buildRoute(selectedEndpointId, indexes, activePathTerminalIds), placedTargetLocation?.targetRas ?? null, activeNoduleAsset);
   }, [activePathTerminalIds, correctTerminalKey, selectedEndpointId, indexes, activeTargetRasKey, activeNoduleAsset]);
 
   const setupMode = mode === "setup";
   const practiceMode = mode === "practice";
+  const testMode = mode === "test";
+  const driveMode = practiceMode || testMode;
+  const effectiveCtViewMode: CtViewMode = testMode ? "standard" : ctViewMode;
   const setupDebugEnabled = setupMode && ENABLE_SCOPE_DEBUG && scopeDebugMode;
   const debugFullPathActive = setupDebugEnabled && debugFullPathPreview;
   const currentDecision: Decision | null = route?.decisions[currentDecisionIndex] ?? null;
@@ -214,9 +221,10 @@ export function App() {
   const driveMapBucket = Math.round(driveDistanceMm / 6);
   const mapDriveRas = useMemo<Vec3 | null>(() => (route ? pointAtRouteDistance(route, driveMapBucket * 6) : null), [route, driveMapBucket]);
   const scopeTracePath = useMemo<Vec3[]>(() => (route ? routePointsToDistance(route, driveDistanceMm) : []), [route, driveDistanceMm]);
-  const noduleRas = activeTargetLocation?.targetRas ?? activeTarget?.targetRas ?? loadedCase?.metadata.initial.snappedTerminalRas;
+  const noduleRas = placedTargetLocation?.targetRas ?? null;
   const airwaySurfaceMeshUrl = appAssetUrl("cases/default/airway_surface.stl");
-  const noduleMeshUrl = noduleMeshUrlForAsset(activeNoduleAsset?.metadata.assetId ?? activeTarget?.noduleAsset.assetId ?? null);
+  const visibleNoduleAsset = noduleRas ? activeNoduleAsset : null;
+  const noduleMeshUrl = noduleRas ? noduleMeshUrlForAsset(activeNoduleAsset?.metadata.assetId ?? activeTarget?.noduleAsset.assetId ?? null) : null;
   const focusRas = drivePose?.cameraRas ?? visibleDecision?.nodeRas ?? noduleRas ?? loadedCase?.metadata.initial.targetRas;
   const selectedOption = visibleDecision?.options.find((option) => option.edgeId === selectedEdgeId) ?? null;
   const correctOptions = visibleDecision?.options.filter((option) => option.isCorrect) ?? [];
@@ -230,8 +238,8 @@ export function App() {
     return buildAirwayFrame(route.routePoints, pointAtRouteDistance(route, axialDistanceMm));
   }, [route, focusRas, focusRouteDistanceMm, sliceOffsets.axial]);
   const sliceOffsetRanges = useMemo(
-    () => (loadedCase && focusRas ? sliceOffsetRangesForView(loadedCase.metadata.ct, focusRas, ctViewMode, route, focusRouteDistanceMm) : DEFAULT_SLICE_OFFSET_RANGES),
-    [loadedCase, focusRas?.[0], focusRas?.[1], focusRas?.[2], ctViewMode, route, focusRouteDistanceMm]
+    () => (loadedCase && focusRas ? sliceOffsetRangesForView(loadedCase.metadata.ct, focusRas, effectiveCtViewMode, route, focusRouteDistanceMm) : DEFAULT_SLICE_OFFSET_RANGES),
+    [loadedCase, focusRas?.[0], focusRas?.[1], focusRas?.[2], effectiveCtViewMode, route, focusRouteDistanceMm]
   );
   const hasCandidateLabels = loadedCase?.metadata.airway.edges.some((edge) => edge.candidateLabels?.length) ?? false;
   const candidateOverlays = useMemo(
@@ -261,9 +269,11 @@ export function App() {
     if (pendingLocationIndex != null) {
       pendingTargetLocationIndexRef.current = null;
       setTargetLocationIndex(pendingLocationIndex);
+      setTargetPlaced(true);
       return;
     }
     setTargetLocationIndex(0);
+    setTargetPlaced(false);
     setTargetPlacementStatus("");
   }, [activeTarget?.id]);
 
@@ -272,6 +282,7 @@ export function App() {
       return;
     }
     setTargetLocationIndex(0);
+    setTargetPlaced(false);
   }, [activeTargetLocations.length, targetLocationIndex]);
 
   useEffect(() => {
@@ -291,7 +302,7 @@ export function App() {
 
   useEffect(() => {
     setSliceOffsets(ZERO_SLICE_OFFSETS);
-  }, [currentDecisionIndex, ctViewMode]);
+  }, [currentDecisionIndex, effectiveCtViewMode]);
 
   useEffect(() => {
     setSliceOffsets((current) => clampSliceOffsets(current, sliceOffsetRanges));
@@ -368,7 +379,7 @@ export function App() {
     );
   }
 
-  if (!loadedCase || !indexes || !route || !focusRas || !noduleRas || !airwayFrame || !airwayAxialFrame) {
+  if (!loadedCase || !indexes || !route || !focusRas || !airwayFrame || !airwayAxialFrame) {
     return (
       <main className="app app-centered">
         <div className="loading-panel">Loading case</div>
@@ -416,8 +427,24 @@ export function App() {
   const targetCount = activeTargetLocations.length;
   const pathCount = activePathTerminalIds.length;
   const pathsNarrowed = pathCount > 0 && pathCount < activeTargetCorrectTerminalIds.length;
+  const visibleDecisionKey = visibleDecision ? String(visibleDecision.nodeId) : "";
+  const testChoiceLocked = Boolean(testMode && visibleDecisionKey && testAttemptResults[visibleDecisionKey] != null);
+  const testAnswerResults = Object.values(testAttemptResults);
+  const testAnsweredCount = testAnswerResults.length;
+  const testCorrectCount = testAnswerResults.filter(Boolean).length;
+  const testIncorrectCount = testAnsweredCount - testCorrectCount;
+  const testScorePercent = testAnsweredCount > 0 ? Math.round((testCorrectCount / testAnsweredCount) * 100) : 0;
+  const testScoreLabel = `${testCorrectCount}/${testAnsweredCount}`;
 
   const chooseOption = (edgeId: number) => {
+    if (testChoiceLocked || (testMode && selectedEdgeId != null)) {
+      return;
+    }
+    const option = visibleDecision?.options.find((candidate) => candidate.edgeId === edgeId);
+    if (testMode && visibleDecision && option) {
+      const decisionKey = String(visibleDecision.nodeId);
+      setTestAttemptResults((current) => (current[decisionKey] == null ? { ...current, [decisionKey]: option.isCorrect } : current));
+    }
     setDriveRunning(false);
     setSelectedEdgeId(edgeId);
   };
@@ -449,9 +476,10 @@ export function App() {
     setDriveRunning(false);
     setDebugFullPathPreview(false);
     setSliceOffsets(ZERO_SLICE_OFFSETS);
+    setTestAttemptResults({});
   };
 
-  const enterMode = (nextMode: "setup" | "practice") => {
+  const enterMode = (nextMode: TrainerMode) => {
     setMode(nextMode);
     setSelectedEdgeId(null);
     setDriveRunning(false);
@@ -461,11 +489,17 @@ export function App() {
       const nextDecisionIndex = Math.min(currentDecisionIndex, Math.max(route.decisions.length - 1, 0));
       setCurrentDecisionIndex(nextDecisionIndex);
       setDriveDistanceMm(stopDistanceForDecision(route, route.decisions[nextDecisionIndex] ?? null));
-      setShowRoute(true);
       setScopeDebugMode(ENABLE_AUTHORING_TOOLS);
       return;
     }
 
+    if (nextMode === "test") {
+      setCtViewMode("standard");
+      setShowRoute(false);
+      setShowScopeTrace(false);
+      setShowScopeCompass(false);
+      setShowScopeTumor(false);
+    }
     setShowRoute(false);
     setScopeDebugMode(false);
     resetPractice();
@@ -522,11 +556,13 @@ export function App() {
     }
     const nextIndex = (targetLocationIndex + delta + activeTargetLocations.length) % activeTargetLocations.length;
     setTargetLocationIndex(nextIndex);
+    setTargetPlaced(true);
     setTargetPlacementStatus(`Target ${nextIndex + 1}`);
   };
 
   const resetTarget = () => {
     setTargetLocationIndex(0);
+    setTargetPlaced(false);
     if (activeTargetLocation) {
       setSelectedEndpointId(activeTargetLocation.initialTerminalNodeId);
       setRemainingCorrectTerminalIds(activeTargetLocation.correctTerminalNodeIds);
@@ -538,7 +574,7 @@ export function App() {
     setDriveRunning(false);
     setDebugFullPathPreview(false);
     setSliceOffsets(ZERO_SLICE_OFFSETS);
-    setTargetPlacementStatus("Target 1");
+    setTargetPlacementStatus("");
   };
 
   const surpriseTarget = () => {
@@ -550,6 +586,7 @@ export function App() {
       nextIndex = (nextIndex + 1) % activeTargetLocations.length;
     }
     setTargetLocationIndex(nextIndex);
+    setTargetPlaced(true);
     setTargetPlacementStatus(`Target ${nextIndex + 1}`);
   };
 
@@ -562,8 +599,8 @@ export function App() {
     }
     setActiveTargetId(beginnerTarget.id);
     setTargetLocationIndex(nextIndex);
+    setTargetPlaced(true);
     setTargetPlacementStatus(status);
-    setShowRoute(true);
     setShowCentralAirwayReview(true);
   };
 
@@ -599,6 +636,7 @@ export function App() {
       return;
     }
     setTargetLocationIndex(nextIndex);
+    setTargetPlaced(true);
     setTargetPlacementStatus(`Snapped to Target ${nextIndex + 1}`);
   };
 
@@ -717,15 +755,18 @@ export function App() {
           <strong>Bronch Navigation Trainer</strong>
           <span>{loadedCase.metadata.caseId}</span>
         </div>
-        <div className="segmented">
+        <div className="segmented mode-selector">
           <button className={setupMode ? "active" : ""} onClick={() => enterMode("setup")}>
             Setup
           </button>
           <button className={practiceMode ? "active" : ""} onClick={() => enterMode("practice")}>
             Practice
           </button>
+          <button className={testMode ? "active" : ""} onClick={() => enterMode("test")}>
+            Test
+          </button>
         </div>
-        {setupMode && (
+        {!testMode && (
           <label className="toggle">
             <input type="checkbox" checked={showRoute} onChange={(event) => setShowRoute(event.target.checked)} />
             <span>Centerline</span>
@@ -742,38 +783,46 @@ export function App() {
             <span>Candidates</span>
           </label>
         )}
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={ctViewMode === "airway"}
-            onChange={(event) => {
-              setCtViewMode(event.target.checked ? "airway" : "standard");
-              setSliceOffsets(ZERO_SLICE_OFFSETS);
-            }}
-          />
-          <span>Airway CT</span>
-        </label>
+        {!testMode && (
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={ctViewMode === "airway"}
+              onChange={(event) => {
+                setCtViewMode(event.target.checked ? "airway" : "standard");
+                setSliceOffsets(ZERO_SLICE_OFFSETS);
+              }}
+            />
+            <span>Airway CT</span>
+          </label>
+        )}
         {setupMode && ENABLE_SCOPE_DEBUG && (
           <label className="toggle">
             <input type="checkbox" checked={scopeDebugMode} onChange={(event) => setScopeDebugMode(event.target.checked)} />
             <span>Scope debug</span>
           </label>
         )}
-        <label className="toggle">
-          <input type="checkbox" checked={showScopeCompass} onChange={(event) => setShowScopeCompass(event.target.checked)} />
-          <span>Compass</span>
-        </label>
-        <label className="toggle">
-          <input type="checkbox" checked={showScopeTumor} onChange={(event) => setShowScopeTumor(event.target.checked)} />
-          <span>Scope tumor</span>
-        </label>
-        <label className="toggle">
-          <input type="checkbox" checked={showScopeTrace} onChange={(event) => setShowScopeTrace(event.target.checked)} />
-          <span>Scope trace</span>
-        </label>
+        {!testMode && (
+          <label className="toggle">
+            <input type="checkbox" checked={showScopeCompass} onChange={(event) => setShowScopeCompass(event.target.checked)} />
+            <span>Compass</span>
+          </label>
+        )}
+        {!testMode && (
+          <label className="toggle">
+            <input type="checkbox" checked={showScopeTumor} onChange={(event) => setShowScopeTumor(event.target.checked)} />
+            <span>Scope tumor</span>
+          </label>
+        )}
+        {!testMode && (
+          <label className="toggle">
+            <input type="checkbox" checked={showScopeTrace} onChange={(event) => setShowScopeTrace(event.target.checked)} />
+            <span>Scope trace</span>
+          </label>
+        )}
         <div className="case-status">
-          <span>{setupMode ? "Mode" : "Decision"}</span>
-          <strong>{setupMode ? "Setup" : progressLabel}</strong>
+          <span>{setupMode ? "Mode" : testMode && driveRouteComplete ? "Score" : "Decision"}</span>
+          <strong>{setupMode ? "Setup" : testMode && driveRouteComplete ? `${testScorePercent}%` : progressLabel}</strong>
         </div>
       </header>
 
@@ -782,9 +831,15 @@ export function App() {
           <span className="section-label">How to use</span>
           {setupMode ? (
             <ol className="instruction-list">
-              <li>Choose a target, or use Surprise me to move to another accepted location.</li>
+              <li>Click Surprise me to place a target automatically.</li>
               <li>Drag the nodule preview onto a CT pane to snap the target near that spot.</li>
               <li>Use Centerline, CT slice controls, and the airway map to confirm the route, then switch to Practice.</li>
+            </ol>
+          ) : testMode ? (
+            <ol className="instruction-list">
+              <li>Use the CT views and virtual bronchoscope only.</li>
+              <li>Drive to each branch, then choose A, B, or C from the scope view.</li>
+              <li>Your final score counts first-choice correct answers.</li>
             </ol>
           ) : (
             <ol className="instruction-list">
@@ -807,10 +862,15 @@ export function App() {
             </div>
           )}
           <h1>{activeTarget?.label ?? "Nodule target"}</h1>
-          <p>
-            Target {targetOrdinal} of {targetCount}. {pathCount} accepted {pathCount === 1 ? "path" : "paths"}
-            {pathsNarrowed ? " from this branch" : ""}.
-          </p>
+          {testMode ? (
+            <p>Helper overlays are hidden. Navigate from CT images and the virtual bronchoscope.</p>
+          ) : (
+            <p>
+              {targetPlaced ? `Target ${targetOrdinal} of ${targetCount}. ` : "No nodule placed. "}
+              {pathCount} accepted {pathCount === 1 ? "path" : "paths"}
+              {pathsNarrowed ? " from this branch" : ""}.
+            </p>
+          )}
           {setupMode ? (
             <>
               <div className="nodule-picker">
@@ -889,7 +949,7 @@ export function App() {
         <div className="panel-section">
           <span className="section-label">CT views</span>
           <div className="decision-meta">
-            <span>{ctViewMode === "airway" ? "Airway aligned" : "Standard planes"}</span>
+            <span>{effectiveCtViewMode === "airway" ? "Airway aligned" : "Standard planes"}</span>
             <span>scroll slices</span>
           </div>
           <button className="secondary-action wide" onClick={resetSlices}>
@@ -909,7 +969,7 @@ export function App() {
           </div>
         </div>
 
-        {practiceMode && (
+        {driveMode && (
           <div className="panel-section">
             <span className="section-label">Drive</span>
             <div className="decision-meta">
@@ -938,17 +998,19 @@ export function App() {
                 onChange={(event) => seekDrive(Number(event.target.value))}
               />
             </label>
-            <label className="range-control drive-range">
-              <span>Speed {Math.round(driveSpeedMmPerSec)} mm/s</span>
-              <input
-                type="range"
-                min="8"
-                max="60"
-                step="1"
-                value={driveSpeedMmPerSec}
-                onChange={(event) => setDriveSpeedMmPerSec(Number(event.target.value))}
-              />
-            </label>
+            {!testMode && (
+              <label className="range-control drive-range">
+                <span>Speed {Math.round(driveSpeedMmPerSec)} mm/s</span>
+                <input
+                  type="range"
+                  min="8"
+                  max="60"
+                  step="1"
+                  value={driveSpeedMmPerSec}
+                  onChange={(event) => setDriveSpeedMmPerSec(Number(event.target.value))}
+                />
+              </label>
+            )}
           </div>
         )}
 
@@ -1073,13 +1135,13 @@ export function App() {
           </div>
         )}
 
-        {practiceMode && (
+        {driveMode && (
           <div className="panel-section">
             <span className="section-label">Branch choice</span>
             {visibleDecision ? (
               <>
                 <div className="decision-meta">
-                  <span>Node {visibleDecision.nodeId}</span>
+                  <span>{testMode ? "Branch point" : `Node ${visibleDecision.nodeId}`}</span>
                   <span>{visibleDecision.options.length} choices</span>
                 </div>
                 <div className="choice-stack">
@@ -1087,24 +1149,26 @@ export function App() {
                     const selected = selectedEdgeId === option.edgeId;
                     const stateClass = selected ? (option.isCorrect ? "choice-correct" : "choice-wrong") : "";
                     const edge = indexes.edgesById.get(option.edgeId);
+                    const lockedOutChoice = testMode && selectedEdgeId != null && selectedEdgeId !== option.edgeId;
                     return (
-                      <button key={option.edgeId} className={`choice-button ${stateClass}`} onClick={() => chooseOption(option.edgeId)}>
+                      <button key={option.edgeId} className={`choice-button ${stateClass}`} onClick={() => chooseOption(option.edgeId)} disabled={lockedOutChoice}>
                         <strong>{option.label}</strong>
-                        <span>{anatomyDisplayName(edge?.anatomy) ?? `Cell ${option.edgeId}`}</span>
+                        <span>{testMode ? "Branch option" : (anatomyDisplayName(edge?.anatomy) ?? `Cell ${option.edgeId}`)}</span>
                       </button>
                     );
                   })}
                 </div>
-                <Feedback selectedEdgeId={selectedEdgeId} selectedOptionCorrect={selectedOption?.isCorrect ?? null} remainingPathCount={selectedOption?.correctTerminalNodeIds?.length ?? 0} />
+                <Feedback selectedEdgeId={selectedEdgeId} selectedOptionCorrect={selectedOption?.isCorrect ?? null} remainingPathCount={selectedOption?.correctTerminalNodeIds?.length ?? 0} testMode={testMode} />
                 <button className="primary-action" disabled={selectedEdgeId == null} onClick={continueDrive}>
                   Drive on
                 </button>
               </>
             ) : driveRouteComplete ? (
               <>
+                {testMode && <TestScoreSummary correctCount={testCorrectCount} incorrectCount={testIncorrectCount} answeredCount={testAnsweredCount} scorePercent={testScorePercent} scoreLabel={testScoreLabel} />}
                 <RouteCompleteCelebration />
                 <button className="primary-action" onClick={resetPractice}>
-                  Restart route
+                  {testMode ? "Restart test" : "Restart route"}
                 </button>
               </>
             ) : (
@@ -1118,40 +1182,42 @@ export function App() {
           </div>
         )}
 
-        <div className="panel-section compact-stats">
-          <div>
-            <span>Route edges</span>
-            <strong>{route.edgePath.length}</strong>
+        {!testMode && (
+          <div className="panel-section compact-stats">
+            <div>
+              <span>Route edges</span>
+              <strong>{route.edgePath.length}</strong>
+            </div>
+            <div>
+              <span>Terminals</span>
+              <strong>{loadedCase.metadata.airway.terminalNodeIds.length}</strong>
+            </div>
           </div>
-          <div>
-            <span>Terminals</span>
-            <strong>{loadedCase.metadata.airway.terminalNodeIds.length}</strong>
-          </div>
-        </div>
+        )}
       </aside>
 
-      <section className="workspace">
+      <section className={`workspace ${testMode ? "workspace-test" : ""}`}>
         <div className="ct-grid">
           <CtPane
             plane="axial"
-            viewMode={ctViewMode}
+            viewMode={effectiveCtViewMode}
             ct={loadedCase.metadata.ct}
             volume={loadedCase.volume}
             focusRas={focusRas}
             noduleRas={noduleRas}
-            noduleAsset={activeNoduleAsset}
+            noduleAsset={visibleNoduleAsset}
             routePaths={centerlineRoutePaths}
             scopeTracePath={scopeTracePath}
-            airwayFrame={ctViewMode === "airway" ? airwayAxialFrame : airwayFrame}
+            airwayFrame={effectiveCtViewMode === "airway" ? airwayAxialFrame : airwayFrame}
             sliceOffset={sliceOffsets.axial}
             sliceOffsetMin={sliceOffsetRanges.axial.min}
             sliceOffsetMax={sliceOffsetRanges.axial.max}
-            airwaySliceDistanceScale={ctViewMode === "airway" ? 0 : 2}
-            showRoute={showRoute}
-            showScopeTrace={showScopeTrace}
-            highlightEdges={highlightEdges}
-            candidateOverlays={candidateOverlays}
-            targetSurveyOverlays={targetSurveyOverlays}
+            airwaySliceDistanceScale={effectiveCtViewMode === "airway" ? 0 : 2}
+            showRoute={!testMode && showRoute}
+            showScopeTrace={!testMode && showScopeTrace}
+            highlightEdges={testMode ? [] : highlightEdges}
+            candidateOverlays={testMode ? [] : candidateOverlays}
+            targetSurveyOverlays={testMode ? [] : targetSurveyOverlays}
             zoom={ctZoom}
             onSliceScroll={handleSliceScroll}
             onSliceOffsetChange={setSliceOffset}
@@ -1160,23 +1226,23 @@ export function App() {
           />
           <CtPane
             plane="coronal"
-            viewMode={ctViewMode}
+            viewMode={effectiveCtViewMode}
             ct={loadedCase.metadata.ct}
             volume={loadedCase.volume}
             focusRas={focusRas}
             noduleRas={noduleRas}
-            noduleAsset={activeNoduleAsset}
+            noduleAsset={visibleNoduleAsset}
             routePaths={centerlineRoutePaths}
             scopeTracePath={scopeTracePath}
             airwayFrame={airwayFrame}
             sliceOffset={sliceOffsets.coronal}
             sliceOffsetMin={sliceOffsetRanges.coronal.min}
             sliceOffsetMax={sliceOffsetRanges.coronal.max}
-            showRoute={showRoute}
-            showScopeTrace={showScopeTrace}
-            highlightEdges={highlightEdges}
-            candidateOverlays={candidateOverlays}
-            targetSurveyOverlays={targetSurveyOverlays}
+            showRoute={!testMode && showRoute}
+            showScopeTrace={!testMode && showScopeTrace}
+            highlightEdges={testMode ? [] : highlightEdges}
+            candidateOverlays={testMode ? [] : candidateOverlays}
+            targetSurveyOverlays={testMode ? [] : targetSurveyOverlays}
             zoom={ctZoom}
             onSliceScroll={handleSliceScroll}
             onSliceOffsetChange={setSliceOffset}
@@ -1185,23 +1251,23 @@ export function App() {
           />
           <CtPane
             plane="sagittal"
-            viewMode={ctViewMode}
+            viewMode={effectiveCtViewMode}
             ct={loadedCase.metadata.ct}
             volume={loadedCase.volume}
             focusRas={focusRas}
             noduleRas={noduleRas}
-            noduleAsset={activeNoduleAsset}
+            noduleAsset={visibleNoduleAsset}
             routePaths={centerlineRoutePaths}
             scopeTracePath={scopeTracePath}
             airwayFrame={airwayFrame}
             sliceOffset={sliceOffsets.sagittal}
             sliceOffsetMin={sliceOffsetRanges.sagittal.min}
             sliceOffsetMax={sliceOffsetRanges.sagittal.max}
-            showRoute={showRoute}
-            showScopeTrace={showScopeTrace}
-            highlightEdges={highlightEdges}
-            candidateOverlays={candidateOverlays}
-            targetSurveyOverlays={targetSurveyOverlays}
+            showRoute={!testMode && showRoute}
+            showScopeTrace={!testMode && showScopeTrace}
+            highlightEdges={testMode ? [] : highlightEdges}
+            candidateOverlays={testMode ? [] : candidateOverlays}
+            targetSurveyOverlays={testMode ? [] : targetSurveyOverlays}
             zoom={ctZoom}
             onSliceScroll={handleSliceScroll}
             onSliceOffsetChange={setSliceOffset}
@@ -1209,7 +1275,7 @@ export function App() {
             onTargetDrop={setupMode ? snapTargetToRas : undefined}
           />
         </div>
-        <div className="right-stack">
+        <div className={`right-stack ${testMode ? "right-stack-test" : ""}`}>
           <BronchoscopeView
             decision={visibleDecision}
             indexes={indexes}
@@ -1218,8 +1284,8 @@ export function App() {
             meshUrl={airwaySurfaceMeshUrl}
             applyDriveAdjustment={Boolean(visibleDecision)}
             showDecisionLabels={Boolean(visibleDecision)}
-            showCompass={showScopeCompass}
-            showTumor={showScopeTumor}
+            showCompass={!testMode && showScopeCompass}
+            showTumor={!testMode && showScopeTumor}
             noduleRas={noduleRas}
             noduleMeshUrl={noduleMeshUrl}
             statusLabel={scopeStatusLabel}
@@ -1227,22 +1293,24 @@ export function App() {
             adjustment={visibleScopeAdjustment}
             onAdjustmentChange={setupDebugEnabled ? (nextAdjustment) => updateCurrentScopeAdjustment(() => nextAdjustment) : undefined}
           />
-          <AirwayMap
-            webCase={loadedCase.metadata}
-            indexes={indexes}
-            route={route}
-            decision={visibleDecision}
-            candidateOverlays={candidateOverlays}
-            selectedEndpointId={selectedEndpointId ?? loadedCase.metadata.initial.snappedTerminalNodeId}
-            selectableEndpointIds={activePathTerminalIds}
-            noduleRas={noduleRas}
-            noduleRadiusMm={activeNoduleAsset?.metadata.maxRadiusMm ?? null}
-            meshUrl={airwaySurfaceMeshUrl}
-            noduleMeshUrl={noduleMeshUrl}
-            selectedEdgeId={selectedEdgeId}
-            committedEdgeIds={takenPathEdgeIds}
-            driveRas={mapDriveRas}
-          />
+          {!testMode && (
+            <AirwayMap
+              webCase={loadedCase.metadata}
+              indexes={indexes}
+              route={route}
+              decision={visibleDecision}
+              candidateOverlays={candidateOverlays}
+              selectedEndpointId={selectedEndpointId ?? loadedCase.metadata.initial.snappedTerminalNodeId}
+              selectableEndpointIds={activePathTerminalIds}
+              noduleRas={noduleRas}
+              noduleRadiusMm={visibleNoduleAsset?.metadata.maxRadiusMm ?? null}
+              meshUrl={airwaySurfaceMeshUrl}
+              noduleMeshUrl={noduleMeshUrl}
+              selectedEdgeId={selectedEdgeId}
+              committedEdgeIds={takenPathEdgeIds}
+              driveRas={mapDriveRas}
+            />
+          )}
         </div>
       </section>
     </main>
@@ -1839,6 +1907,40 @@ function RouteCompleteCelebration() {
   );
 }
 
+function TestScoreSummary({
+  correctCount,
+  incorrectCount,
+  answeredCount,
+  scorePercent,
+  scoreLabel
+}: {
+  correctCount: number;
+  incorrectCount: number;
+  answeredCount: number;
+  scorePercent: number;
+  scoreLabel: string;
+}) {
+  return (
+    <div className="test-score-summary" role="status" aria-live="polite">
+      <span className="section-label">Test score</span>
+      <strong>{scorePercent}%</strong>
+      <span>
+        {scoreLabel} first choices correct across {answeredCount} {answeredCount === 1 ? "branch" : "branches"}.
+      </span>
+      <div className="test-score-grid">
+        <span>
+          <strong>{correctCount}</strong>
+          Correct
+        </span>
+        <span>
+          <strong>{incorrectCount}</strong>
+          Incorrect
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function DebugSlider({
   label,
   value,
@@ -2071,22 +2173,30 @@ function buildCandidateOverlays(currentDecision: Decision, edgesById: Map<number
 function Feedback({
   selectedEdgeId,
   selectedOptionCorrect,
-  remainingPathCount
+  remainingPathCount,
+  testMode
 }: {
   selectedEdgeId: number | null;
   selectedOptionCorrect: boolean | null;
   remainingPathCount: number;
+  testMode: boolean;
 }) {
   if (selectedEdgeId == null) {
     return <div className="feedback neutral">Pick A, B, or C from the bronchoscope view.</div>;
   }
   if (selectedOptionCorrect) {
+    if (testMode) {
+      return <div className="feedback correct">Correct. First attempt recorded.</div>;
+    }
     const pathCount = Math.max(remainingPathCount, 1);
     return (
       <div className="feedback correct">
         Correct. {pathCount} accepted {pathCount === 1 ? "path remains" : "paths remain"} from here.
       </div>
     );
+  }
+  if (testMode) {
+    return <div className="feedback wrong">Not this branch. First attempt recorded.</div>;
   }
   return <div className="feedback wrong">Not this branch. The correct airway is shown in amber for comparison.</div>;
 }
