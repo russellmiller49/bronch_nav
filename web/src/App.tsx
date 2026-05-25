@@ -67,6 +67,7 @@ const DRIVE_SHORT_SEGMENT_BACK_FRACTION = 0.7;
 const DRIVE_PARENT_CLEARANCE_MM = 3;
 const DEFAULT_DRIVE_SPEED_MM_PER_SEC = 22;
 const TARGET_PATH_RADIUS_MARGIN_MM = 8;
+const MIN_TARGET_PATH_SELECTIONS = 5;
 const NODULE_CONTACT_ALPHA_MIN = 64;
 const NODULE_CONTACT_MIN_HITS = 2;
 const NODULE_CONTACT_SAMPLE_MM = 1.5;
@@ -1388,12 +1389,16 @@ function clampSliceOffsets(offsets: SliceOffsets, ranges: SliceOffsetRanges): Sl
 
 function targetLocationsForTarget(target: NoduleTarget, indexes: CaseIndexes, noduleAsset: LoadedNoduleAsset | null): NoduleTargetLocation[] {
   if (target.locations?.length) {
-    return target.locations.map((location, index) => ({
-      ...location,
-      id: location.id || `${target.id}-target-${index + 1}`,
-      label: location.label || `Target ${index + 1}`,
-      correctTerminalNodeIds: uniqueNodeIds(location.correctTerminalNodeIds.length ? location.correctTerminalNodeIds : [location.initialTerminalNodeId])
-    }));
+    return removeShortPathTargets(
+      target.locations.map((location, index) => ({
+        ...location,
+        id: location.id || `${target.id}-target-${index + 1}`,
+        label: location.label || `Target ${index + 1}`,
+        correctTerminalNodeIds: uniqueNodeIds(location.correctTerminalNodeIds.length ? location.correctTerminalNodeIds : [location.initialTerminalNodeId])
+      })),
+      indexes,
+      noduleAsset
+    );
   }
 
   const anchorNodeIds = orderedTerminalNodeIdsForTargets(indexes, target.initialTerminalNodeId);
@@ -1405,7 +1410,7 @@ function targetLocationsForTarget(target: NoduleTarget, indexes: CaseIndexes, no
   const useNearbyAcceptedPaths = target.correctTerminalNodeIds.length > 1;
   const routePointCache = new Map<number, Vec3[]>();
 
-  return (anchorNodeIds.length ? anchorNodeIds : [target.initialTerminalNodeId]).map((anchorNodeId, index) => {
+  const generatedLocations = (anchorNodeIds.length ? anchorNodeIds : [target.initialTerminalNodeId]).map((anchorNodeId, index) => {
     const anchorNode = indexes.nodesById.get(anchorNodeId);
     const generatedTargetRas: Vec3 = anchorNode
       ? [anchorNode.ras[0] + anchorOffset[0], anchorNode.ras[1] + anchorOffset[1], anchorNode.ras[2] + anchorOffset[2]]
@@ -1437,6 +1442,25 @@ function targetLocationsForTarget(target: NoduleTarget, indexes: CaseIndexes, no
       correctTerminalNodeIds
     };
   });
+
+  return removeShortPathTargets(generatedLocations, indexes, noduleAsset);
+}
+
+function removeShortPathTargets(locations: NoduleTargetLocation[], indexes: CaseIndexes, noduleAsset: LoadedNoduleAsset | null): NoduleTargetLocation[] {
+  return locations.filter((location) => {
+    const terminalNodeIds = uniqueNodeIds(location.correctTerminalNodeIds.length ? location.correctTerminalNodeIds : [location.initialTerminalNodeId]);
+    return terminalNodeIds.length > 0 && terminalNodeIds.every((terminalNodeId) => pathSelectionCountForTargetLocation(location, terminalNodeId, terminalNodeIds, indexes, noduleAsset) >= MIN_TARGET_PATH_SELECTIONS);
+  });
+}
+
+function pathSelectionCountForTargetLocation(
+  location: NoduleTargetLocation,
+  terminalNodeId: number,
+  correctTerminalNodeIds: number[],
+  indexes: CaseIndexes,
+  noduleAsset: LoadedNoduleAsset | null
+): number {
+  return clipRouteToNoduleContact(buildRoute(terminalNodeId, indexes, correctTerminalNodeIds), location.targetRas, noduleAsset).decisions.length;
 }
 
 function applyGeneratedTargetLocationOffset(targetId: string, targetIndex: number, targetRas: Vec3): Vec3 {

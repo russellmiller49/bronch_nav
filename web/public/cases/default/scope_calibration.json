@@ -110,9 +110,9 @@
     "23": {
       "cameraBackMm": 5,
       "lookAheadMm": 8,
-      "yawDeg": -29,
-      "pitchDeg": -3,
-      "rollDeg": -19,
+      "yawDeg": -2,
+      "pitchDeg": 1,
+      "rollDeg": -21,
       "fovDeg": 82,
       "labelOffsets": {
         "B": {
@@ -120,8 +120,8 @@
           "y": -6
         },
         "A": {
-          "x": -1,
-          "y": 50
+          "x": 28,
+          "y": 2
         }
       }
     },
@@ -181,11 +181,11 @@
     },
     "46": {
       "cameraBackMm": 5,
-      "lookAheadMm": 8,
-      "yawDeg": -14,
-      "pitchDeg": 0,
-      "rollDeg": -84,
-      "fovDeg": 57,
+      "lookAheadMm": 30,
+      "yawDeg": -26,
+      "pitchDeg": 6,
+      "rollDeg": -53,
+      "fovDeg": 77,
       "labelOffsets": {}
     },
     "47": {
@@ -225,6 +225,20 @@
         }
       }
     },
+    "64": {
+      "cameraBackMm": 12,
+      "lookAheadMm": 23,
+      "yawDeg": 9,
+      "pitchDeg": -1,
+      "rollDeg": 4,
+      "fovDeg": 49,
+      "labelOffsets": {
+        "B": {
+          "x": -93,
+          "y": -19
+        }
+      }
+    },
     "91": {
       "cameraBackMm": 29,
       "lookAheadMm": 36,
@@ -256,6 +270,20 @@
       "rollDeg": 134,
       "fovDeg": 84,
       "labelOffsets": {}
+    },
+    "99": {
+      "cameraBackMm": 10,
+      "lookAheadMm": 30,
+      "yawDeg": 0,
+      "pitchDeg": 0,
+      "rollDeg": 0,
+      "fovDeg": 84,
+      "labelOffsets": {
+        "B": {
+          "x": -2,
+          "y": 12
+        }
+      }
     },
     "108": {
       "cameraBackMm": 6,
@@ -360,5 +388,5 @@
       "labelOffsets": {}
     }
   },
-  "updatedAt": "2026-05-09T03:11:25.668Z"
+  "updatedAt": "2026-05-25T20:56:59.656Z"
 }
