@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import type { Decision, ScopeAdjustment, Vec3 } from "../types";
@@ -9,6 +9,7 @@ declare const __APP_BASE_PATH__: string;
 
 interface ScopeLabel {
   label: string;
+  edgeId: number;
   x: number;
   y: number;
   state: "neutral" | "correct" | "wrong" | "correct-unselected";
@@ -41,6 +42,8 @@ interface BronchoscopeViewProps {
   debugMode?: boolean;
   adjustment?: ScopeAdjustment;
   onAdjustmentChange?: (adjustment: ScopeAdjustment) => void;
+  onOptionSelect?: (edgeId: number) => void;
+  footer?: ReactNode;
   meshUrl?: string;
 }
 
@@ -104,6 +107,8 @@ export function BronchoscopeView({
   debugMode = false,
   adjustment: rawAdjustment,
   onAdjustmentChange,
+  onOptionSelect,
+  footer,
   meshUrl = appAssetUrl("cases/default/airway_surface.stl")
 }: BronchoscopeViewProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -311,7 +316,7 @@ export function BronchoscopeView({
     drivePose?.targetRas[2]
   ]);
 
-  const beginLabelDrag = (item: ScopeLabel, event: PointerEvent<HTMLSpanElement>) => {
+  const beginLabelDrag = (item: ScopeLabel, event: PointerEvent<HTMLButtonElement>) => {
     if (!debugMode || !onAdjustmentChange) {
       return;
     }
@@ -352,18 +357,27 @@ export function BronchoscopeView({
         {meshStatus === "loading" && <div className="scope-status">Loading airway surface</div>}
         {meshStatus === "error" && <div className="scope-status">Airway surface unavailable</div>}
         {labels.map((item) => (
-          <span
+          <button
+            type="button"
             key={item.label}
-            className={`scope-label scope-label-${item.state} ${debugMode ? "scope-label-debug" : ""}`}
+            className={`scope-label scope-label-${item.state} ${debugMode ? "scope-label-debug" : ""} ${onOptionSelect && !debugMode ? "scope-label-selectable" : ""}`}
             style={{
               left: `${item.x}px`,
               top: `${item.y}px`,
-              opacity: item.visible ? 1 : 0
+              opacity: item.visible ? 1 : 0,
+              pointerEvents: item.visible && (debugMode || onOptionSelect) ? "auto" : "none"
             }}
             onPointerDown={(event) => beginLabelDrag(item, event)}
+            onClick={() => {
+              if (!debugMode) {
+                onOptionSelect?.(item.edgeId);
+              }
+            }}
+            tabIndex={debugMode || !onOptionSelect ? -1 : 0}
+            aria-label={`Select branch ${item.label}`}
           >
             {item.label}
-          </span>
+          </button>
         ))}
         {showCompass && compassMarkers.length > 0 && (
           <div className="scope-compass" aria-label="Patient orientation overlay">
@@ -376,6 +390,7 @@ export function BronchoscopeView({
           </div>
         )}
       </div>
+      {footer ? <div className="scope-footer">{footer}</div> : null}
     </section>
   );
 }
@@ -597,6 +612,7 @@ function updateLabels(
         : "neutral";
     return {
       label: option.label,
+      edgeId: option.edgeId,
       x: (projected.x * 0.5 + 0.5) * width + offset.x,
       y: (-projected.y * 0.5 + 0.5) * height + offset.y,
       visible: projected.z > -1 && projected.z < 1,

@@ -506,10 +506,16 @@ export function App() {
     resetPractice();
   };
 
-  const seekDrive = (distanceMm: number) => {
-    setDriveRunning(false);
-    setDriveDistanceMm(clamp(distanceMm, 0, driveTargetDistanceMm));
+  const wizardStep: 1 | 2 | 3 = setupMode ? 1 : practiceMode ? 2 : 3;
+  const canAdvanceToPractice = targetPlaced;
+  const goToStep = (step: 1 | 2 | 3) => {
+    if ((step === 2 || step === 3) && !canAdvanceToPractice) {
+      return;
+    }
+    enterMode(step === 1 ? "setup" : step === 2 ? "practice" : "test");
   };
+  const wizardNext = () => goToStep(Math.min(wizardStep + 1, 3) as 1 | 2 | 3);
+  const wizardBack = () => goToStep(Math.max(wizardStep - 1, 1) as 1 | 2 | 3);
 
   const nudgeDrive = (deltaMm: number) => {
     setDriveRunning(false);
@@ -749,6 +755,62 @@ export function App() {
     }, 250);
   };
 
+  const scopeFooter = driveMode ? (
+    visibleDecision ? (
+      <>
+        <div className="scope-choice-row">
+          {visibleDecision.options.map((option) => {
+            const selected = selectedEdgeId === option.edgeId;
+            const stateClass = selected ? (option.isCorrect ? "choice-correct" : "choice-wrong") : "";
+            const lockedOutChoice = testMode && selectedEdgeId != null && selectedEdgeId !== option.edgeId;
+            return (
+              <button
+                key={option.edgeId}
+                className={`choice-button ${stateClass}`}
+                onClick={() => chooseOption(option.edgeId)}
+                disabled={lockedOutChoice}
+                aria-label={`Select branch ${option.label}`}
+              >
+                <strong>{option.label}</strong>
+              </button>
+            );
+          })}
+        </div>
+        <Feedback selectedEdgeId={selectedEdgeId} selectedOptionCorrect={selectedOption?.isCorrect ?? null} remainingPathCount={selectedOption?.correctTerminalNodeIds?.length ?? 0} testMode={testMode} />
+        <button className="primary-action" disabled={selectedEdgeId == null} onClick={continueDrive}>
+          Drive on
+        </button>
+      </>
+    ) : driveRouteComplete ? (
+      <>
+        {testMode && <TestScoreSummary correctCount={testCorrectCount} incorrectCount={testIncorrectCount} answeredCount={testAnsweredCount} scorePercent={testScorePercent} scoreLabel={testScoreLabel} />}
+        <RouteCompleteCelebration />
+        <button className="primary-action" onClick={resetPractice}>
+          {testMode ? "Restart test" : "Restart route"}
+        </button>
+      </>
+    ) : (
+      <>
+        <div className="scope-progress" aria-hidden="true">
+          <div className="scope-progress-fill" style={{ width: `${driveProgressPercent}%` }} />
+        </div>
+        <div className="scope-footer-primary">
+          <div className="scope-footer-transport">
+            <button className="icon-action" onClick={() => nudgeDrive(-8)} aria-label="Move scope backward">
+              {"<"}
+            </button>
+            <button className="icon-action" onClick={() => nudgeDrive(8)} aria-label="Move scope forward" disabled={atDecisionStop}>
+              {">"}
+            </button>
+          </div>
+          <button className="primary-action" onClick={toggleDrive} disabled={atDecisionStop}>
+            {driveRunning ? "Pause" : "Drive to branch"}
+          </button>
+        </div>
+      </>
+    )
+  ) : null;
+
   return (
     <main className="app">
       <header className="topbar">
@@ -756,15 +818,38 @@ export function App() {
           <strong>Bronch Navigation Trainer</strong>
           <span>{loadedCase.metadata.caseId}</span>
         </div>
-        <div className="segmented mode-selector">
-          <button className={setupMode ? "active" : ""} onClick={() => enterMode("setup")}>
-            Setup
+        <div className="wizard-stepper" role="group" aria-label="Trainer steps">
+          {([
+            { n: 1 as const, label: "Place target" },
+            { n: 2 as const, label: "Practice" },
+            { n: 3 as const, label: "Test" }
+          ]).map((step) => {
+            const locked = step.n > 1 && !canAdvanceToPractice;
+            return (
+              <button
+                key={step.n}
+                className={`wizard-step ${wizardStep === step.n ? "active" : ""} ${wizardStep > step.n ? "done" : ""}`}
+                onClick={() => goToStep(step.n)}
+                disabled={locked}
+                aria-current={wizardStep === step.n ? "step" : undefined}
+              >
+                <span className="wizard-step-index">{step.n}</span>
+                <span className="wizard-step-label">{step.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="wizard-nav">
+          <button className="secondary-action" onClick={wizardBack} disabled={wizardStep === 1}>
+            Back
           </button>
-          <button className={practiceMode ? "active" : ""} onClick={() => enterMode("practice")}>
-            Practice
-          </button>
-          <button className={testMode ? "active" : ""} onClick={() => enterMode("test")}>
-            Test
+          <button
+            className="primary-action"
+            onClick={wizardNext}
+            disabled={wizardStep === 3 || (wizardStep === 1 && !canAdvanceToPractice)}
+            aria-label={wizardStep === 1 && !canAdvanceToPractice ? "Place a target first" : undefined}
+          >
+            Next
           </button>
         </div>
         {!testMode && (
@@ -829,7 +914,7 @@ export function App() {
 
       <aside className="trainer-panel">
         <div className="panel-section guide-section">
-          <span className="section-label">How to use</span>
+          <span className="section-label">{`Step ${wizardStep} of 3 — ${wizardStep === 1 ? "Place target" : wizardStep === 2 ? "Practice" : "Test"}`}</span>
           {setupMode ? (
             <ol className="instruction-list">
               <li>Click Surprise me to place a target automatically.</li>
@@ -970,51 +1055,6 @@ export function App() {
           </div>
         </div>
 
-        {driveMode && (
-          <div className="panel-section">
-            <span className="section-label">Drive</span>
-            <div className="decision-meta">
-              <span>{driveRunning ? "Moving" : driveRouteComplete ? "Complete" : atDecisionStop ? "At branch" : "Paused"}</span>
-              <span>{driveProgressPercent}%</span>
-            </div>
-            <div className="drive-controls">
-              <button className="icon-action" onClick={() => nudgeDrive(-8)} aria-label="Move scope backward">
-                {"<"}
-              </button>
-              <button className="secondary-action" onClick={toggleDrive} disabled={driveRouteComplete || atDecisionStop}>
-                {driveRunning ? "Pause" : "Drive"}
-              </button>
-              <button className="icon-action" onClick={() => nudgeDrive(8)} aria-label="Move scope forward" disabled={driveRouteComplete || atDecisionStop}>
-                {">"}
-              </button>
-            </div>
-            <label className="range-control drive-range">
-              <span>Position {Math.round(driveDistanceMm)} mm</span>
-              <input
-                type="range"
-                min="0"
-                max={Math.max(1, Math.round(driveTargetDistanceMm))}
-                step="1"
-                value={Math.round(clamp(driveDistanceMm, 0, Math.max(1, driveTargetDistanceMm)))}
-                onChange={(event) => seekDrive(Number(event.target.value))}
-              />
-            </label>
-            {!testMode && (
-              <label className="range-control drive-range">
-                <span>Speed {Math.round(driveSpeedMmPerSec)} mm/s</span>
-                <input
-                  type="range"
-                  min="8"
-                  max="60"
-                  step="1"
-                  value={driveSpeedMmPerSec}
-                  onChange={(event) => setDriveSpeedMmPerSec(Number(event.target.value))}
-                />
-              </label>
-            )}
-          </div>
-        )}
-
         {setupDebugEnabled && (
           <div className="panel-section debug-section">
             <span className="section-label">Scope debug</span>
@@ -1136,53 +1176,6 @@ export function App() {
           </div>
         )}
 
-        {driveMode && (
-          <div className="panel-section">
-            <span className="section-label">Branch choice</span>
-            {visibleDecision ? (
-              <>
-                <div className="decision-meta">
-                  <span>{testMode ? "Branch point" : `Node ${visibleDecision.nodeId}`}</span>
-                  <span>{visibleDecision.options.length} choices</span>
-                </div>
-                <div className="choice-stack">
-                  {visibleDecision.options.map((option) => {
-                    const selected = selectedEdgeId === option.edgeId;
-                    const stateClass = selected ? (option.isCorrect ? "choice-correct" : "choice-wrong") : "";
-                    const edge = indexes.edgesById.get(option.edgeId);
-                    const lockedOutChoice = testMode && selectedEdgeId != null && selectedEdgeId !== option.edgeId;
-                    return (
-                      <button key={option.edgeId} className={`choice-button ${stateClass}`} onClick={() => chooseOption(option.edgeId)} disabled={lockedOutChoice}>
-                        <strong>{option.label}</strong>
-                        <span>{testMode ? "Branch option" : (anatomyDisplayName(edge?.anatomy) ?? `Cell ${option.edgeId}`)}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <Feedback selectedEdgeId={selectedEdgeId} selectedOptionCorrect={selectedOption?.isCorrect ?? null} remainingPathCount={selectedOption?.correctTerminalNodeIds?.length ?? 0} testMode={testMode} />
-                <button className="primary-action" disabled={selectedEdgeId == null} onClick={continueDrive}>
-                  Drive on
-                </button>
-              </>
-            ) : driveRouteComplete ? (
-              <>
-                {testMode && <TestScoreSummary correctCount={testCorrectCount} incorrectCount={testIncorrectCount} answeredCount={testAnsweredCount} scorePercent={testScorePercent} scoreLabel={testScoreLabel} />}
-                <RouteCompleteCelebration />
-                <button className="primary-action" onClick={resetPractice}>
-                  {testMode ? "Restart test" : "Restart route"}
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="done-state">{driveRunning ? "Driving" : "Paused"}</div>
-                <button className="primary-action" disabled={driveRunning || atDecisionStop} onClick={() => setDriveRunning(true)}>
-                  Drive to branch
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
         {!testMode && (
           <div className="panel-section compact-stats">
             <div>
@@ -1293,6 +1286,8 @@ export function App() {
             debugMode={setupDebugEnabled}
             adjustment={visibleScopeAdjustment}
             onAdjustmentChange={setupDebugEnabled ? (nextAdjustment) => updateCurrentScopeAdjustment(() => nextAdjustment) : undefined}
+            onOptionSelect={visibleDecision ? chooseOption : undefined}
+            footer={scopeFooter}
           />
           {!testMode && (
             <AirwayMap
