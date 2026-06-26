@@ -1,9 +1,9 @@
 import type { AirwayCandidateLabel, AirwayCandidatePayload, LoadedCase, LoadedNoduleAsset, NoduleAssetMetadata, WebCase } from "./types";
+import { ENABLE_SCOPE_DEBUG } from "./runtimeFlags";
 
 declare const __APP_BASE_PATH__: string;
-declare const __ENABLE_SCOPE_DEBUG__: boolean;
 
-const ENABLE_AUTHORING_TOOLS = __ENABLE_SCOPE_DEBUG__;
+const ENABLE_AUTHORING_TOOLS = ENABLE_SCOPE_DEBUG;
 
 export async function loadCase(caseUrl = appAssetUrl("cases/default/case.json")): Promise<LoadedCase> {
   const metadata = (await fetch(caseUrl).then((response) => {
@@ -48,7 +48,7 @@ async function fetchScopeCalibrationSidecar(metadata: WebCase, caseUrl: string) 
   const sidecarPath = metadata.scopeCalibrationJson ?? "scope_calibration.json";
   const url = new URL(sidecarPath, new URL(caseUrl, window.location.origin)).toString();
   return fetch(url).then(async (response) => {
-    if (response.status === 404) {
+    if (await isMissingOptionalSidecar(response)) {
       return null;
     }
     if (!response.ok) {
@@ -66,7 +66,7 @@ async function fetchCandidateSidecar(metadata: WebCase, caseUrl: string): Promis
   const sidecarPath = metadata.airway.candidatesJson ?? "book_candidates.json";
   const url = new URL(sidecarPath, new URL(caseUrl, window.location.origin)).toString();
   return fetch(url).then(async (response) => {
-    if (response.status === 404) {
+    if (await isMissingOptionalSidecar(response)) {
       return null;
     }
     if (!response.ok) {
@@ -101,6 +101,29 @@ function normalizeCandidateLabels(raw: AirwayCandidatePayload["edges"][string] |
       source: typeof item.source === "string" ? item.source : "book_directional_rules"
     }))
     .sort((a, b) => b.score - a.score || a.candidateLabel.localeCompare(b.candidateLabel));
+}
+
+async function isMissingOptionalSidecar(response: Response) {
+  if (response.status === 404) {
+    return true;
+  }
+  if (response.status !== 400) {
+    return false;
+  }
+
+  try {
+    const payload: unknown = await response.clone().json();
+    if (!payload || typeof payload !== "object") {
+      return false;
+    }
+    const record = payload as Record<string, unknown>;
+    return (
+      record.statusCode === "404" &&
+      (record.error === "not_found" || record.message === "Object not found")
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function fetchCaseArrayBuffer(path: string, caseUrl: string, label: string) {

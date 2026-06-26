@@ -29,8 +29,8 @@ import {
   type ScopeCameraPose
 } from "./components/BronchoscopeView";
 import { AirwayMap } from "./components/AirwayMap";
+import { ENABLE_SCOPE_DEBUG } from "./runtimeFlags";
 
-declare const __ENABLE_SCOPE_DEBUG__: boolean;
 declare const __APP_BASE_PATH__: string;
 
 type SliceOffsets = Record<PlaneKind, number>;
@@ -78,8 +78,8 @@ const CENTRAL_AIRWAY_REVIEW_SAMPLE_MM = 1.25;
 const CENTRAL_AIRWAY_REVIEW_MIN_OVERLAP_MM = 25;
 const CENTRAL_AIRWAY_REVIEW_EXCLUDED_TARGET_NUMBERS = new Set([19, 123, 154, 158, 180]);
 const CHOICE_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-const ENABLE_SCOPE_DEBUG = __ENABLE_SCOPE_DEBUG__;
 const ENABLE_AUTHORING_TOOLS = ENABLE_SCOPE_DEBUG;
+const SCOPE_CALIBRATION_WRITE_ENDPOINT = "/api/scope-calibration";
 const MANUAL_TARGET_PATH_OVERRIDES = [
   { targetId: "advanced", targetIndex: 1, branchNodeId: 55, optionLabel: "A" },
   { targetId: "beginner", targetIndex: 1, branchNodeId: 255, optionLabel: "B" }
@@ -2043,7 +2043,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 async function saveScopeAdjustmentToSource(caseId: string, nodeKey: string, adjustment: ScopeAdjustment | null) {
-  const response = await fetch("/__scope_calibration", {
+  const response = await fetch(SCOPE_CALIBRATION_WRITE_ENDPOINT, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
